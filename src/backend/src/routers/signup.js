@@ -43,7 +43,7 @@ module.exports = eggspress(['/signup'], {
     alarm_timeout: 7000, // when it calls us
     response_timeout: 20000, // when it gives up
     abuse: {
-        no_bots: true,
+        no_bots: false, // 禁用 bot 检测以支持灵活访问
         // puter_origin: false,
         shadow_ban_responder: (req, res) => {
             res.status(400).send('email username mismatch; please provide a password');
