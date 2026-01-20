@@ -196,6 +196,12 @@ class WebServerService extends BaseService {
         const url = config.origin;
         const link = `\x1B[34;1m${url}\x1B[0m`;
 
+        // For browser auto-open, use 127.0.0.1 instead of domain name
+        // to avoid DNS resolution delays in development
+        const browser_url = config.env === 'dev'
+            ? `${config.protocol}://127.0.0.1:${config.http_port}`
+            : url;
+
         // Note: Browser will be opened after all services are ready
         // to avoid opening before the server is fully initialized
         const lines = [
@@ -277,8 +283,8 @@ class WebServerService extends BaseService {
             setTimeout(async () => {
                 try {
                     const openModule = await import('open');
-                    // Try to open in default browser
-                    await openModule.default(url, {
+                    // Try to open in default browser using 127.0.0.1 (avoids DNS delay)
+                    await openModule.default(browser_url, {
                         // Specify app to try different browsers
                         app: ['google chrome', 'firefox', 'edge'],
                     });
@@ -290,8 +296,12 @@ class WebServerService extends BaseService {
                     realConsole.log('🌐  Puter is ready!');
                     realConsole.log('📍  Open this URL in your browser:');
                     realConsole.log('');
-                    realConsole.log(`   ${url}`);
+                    realConsole.log(`   ${browser_url}`);
                     realConsole.log('');
+                    if ( browser_url !== url ) {
+                        realConsole.log(`   (or ${url})`);
+                        realConsole.log('');
+                    }
                     realConsole.log(`${'='.repeat(60) }\n`);
                 }
             }, 1000);
