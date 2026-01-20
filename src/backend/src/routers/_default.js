@@ -322,7 +322,10 @@ router.all('*', async function (req, res, next) {
             let app;
             // 使用请求的实际协议和主机名，而不是配置的 origin
             // 这样可以支持反向代理和不同的域名访问
-            let canonical_url = `${req.protocol}://${req.get('host')}${path}`;
+            // 检查 X-Forwarded-Proto 头以识别反向代理的真实协议
+            const protocol = req.get('X-Forwarded-Proto') || req.protocol;
+            const host = req.get('X-Forwarded-Host') || req.get('host');
+            let canonical_url = `${protocol}://${host}${path}`;
             let app_name, app_title, app_description, app_icon, app_social_media_image;
             let launch_options = {
                 on_initialized: [],

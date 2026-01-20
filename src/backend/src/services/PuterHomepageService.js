@@ -120,8 +120,9 @@ export class PuterHomepageService extends BaseService {
         const turnstileSiteKey = config.services?.['cloudflare-turnstile']?.enabled ? config.services?.['cloudflare-turnstile']?.site_key : null;
 
         // 使用请求的实际协议和主机名，支持反向代理
-        const actual_protocol = req.protocol;
-        const actual_host = req.get('host');
+        // 检查 X-Forwarded-Proto 和 X-Forwarded-Host 头以识别反向代理的真实协议和主机
+        const actual_protocol = req.get('X-Forwarded-Proto') || req.protocol;
+        const actual_host = req.get('X-Forwarded-Host') || req.get('host');
         const actual_origin = `${actual_protocol}://${actual_host}`;
 
         // 构建 API base URL：如果配置了 experimental_no_subdomain，使用同一个域名
