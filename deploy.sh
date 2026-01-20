@@ -56,39 +56,27 @@ echo ""
 # 6. 创建配置文件
 echo -e "${YELLOW}6. 创建配置文件...${NC}"
 if [ ! -f "config/config.json" ]; then
-    cat > config/config.json << 'EOF'
+    if [ -f "config.prod.json" ]; then
+        cp config.prod.json config/config.json
+        echo "✅ 配置文件创建完成（从 config.prod.json 复制）"
+    else
+        cat > config/config.json << 'EOF'
 {
     "env": "production",
     "http_port": 4100,
-    "domain": "puter.localhost",
-    "protocol": "http",
-    "contact_email": "your-email@example.com",
     "allow_all_host_values": true,
-    "allow_nipio_domains": true,
-    "disable_ip_validate_event": true,
-    "custom_domains_enabled": true,
     "experimental_no_subdomain": true,
+    "disable_ip_validate_event": true,
     "services": {
         "database": {
             "engine": "sqlite",
             "path": "/var/puter/puter-database.sqlite"
-        },
-        "dynamo": {
-            "path": "/var/puter/puter-ddb"
-        },
-        "thumbnails": {
-            "engine": "purejs"
-        },
-        "file-cache": {
-            "disk_limit": 16384,
-            "disk_max_size": 16384,
-            "precache_size": 16384,
-            "path": "/var/puter/file-cache"
         }
     }
 }
 EOF
-    echo "✅ 配置文件创建完成"
+        echo "✅ 配置文件创建完成（最小配置）"
+    fi
 else
     echo "⚠️  配置文件已存在，跳过创建"
 fi
