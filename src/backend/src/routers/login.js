@@ -55,19 +55,8 @@ const complete_ = async ({ req, res, user }) => {
 // POST /login
 // -----------------------------------------------------------------------//
 router.post('/login', express.json(), body_parser_error_handler,
-                // Add diagnostic middleware to log captcha data
-                (req, res, next) => {
-                    if ( process.env.DEBUG ) {
-                        console.log('====== LOGIN CAPTCHA DIAGNOSTIC ======');
-                        console.log('LOGIN REQUEST RECEIVED with captcha data:', {
-                            hasCaptchaToken: !!req.body.captchaToken,
-                            hasCaptchaAnswer: !!req.body.captchaAnswer,
-                            captchaToken: req.body.captchaToken ? `${req.body.captchaToken.substring(0, 8) }...` : undefined,
-                            captchaAnswer: req.body.captchaAnswer,
-                        });
-                    }
-                    next();
-                }, requireCaptcha({ strictMode: true, eventType: 'login' }), async (req, res, next) => {
+                // 禁用 captcha 中间件以支持灵活访问
+                async (req, res, next) => {
                     // either api. subdomain or no subdomain
                     if ( require('../helpers').subdomain(req) !== 'api' && require('../helpers').subdomain(req) !== '' )
                     {
@@ -187,63 +176,64 @@ router.post('/login', express.json(), body_parser_error_handler,
 
                 });
 
-router.post('/login/otp', express.json(), body_parser_error_handler, requireCaptcha({ strictMode: true, eventType: 'login_otp' }), async (req, res, next) => {
-    // either api. subdomain or no subdomain
-    if ( require('../helpers').subdomain(req) !== 'api' && require('../helpers').subdomain(req) !== '' )
-    {
-        next();
-    }
+router.post('/login/otp', express.json(), body_parser_error_handler, // 禁用 captcha 中间件
+                async (req, res, next) => {
+                    // either api. subdomain or no subdomain
+                    if ( require('../helpers').subdomain(req) !== 'api' && require('../helpers').subdomain(req) !== '' )
+                    {
+                        next();
+                    }
 
-    const svc_edgeRateLimit = req.services.get('edge-rate-limit');
-    if ( ! svc_edgeRateLimit.check('login-otp') ) {
-        return res.status(429).send('Too many requests.');
-    }
+                    const svc_edgeRateLimit = req.services.get('edge-rate-limit');
+                    if ( ! svc_edgeRateLimit.check('login-otp') ) {
+                        return res.status(429).send('Too many requests.');
+                    }
 
-    if ( ! req.body.token ) {
-        return res.status(400).send('token is required.');
-    }
+                    if ( ! req.body.token ) {
+                        return res.status(400).send('token is required.');
+                    }
 
-    if ( ! req.body.code ) {
-        return res.status(400).send('code is required.');
-    }
+                    if ( ! req.body.code ) {
+                        return res.status(400).send('code is required.');
+                    }
 
-    const svc_token = req.services.get('token');
-    let decoded; try {
-        decoded = svc_token.verify('otp', req.body.token);
-    } catch ( e ) {
-        return res.status(400).send('Invalid token.');
-    }
+                    const svc_token = req.services.get('token');
+                    let decoded; try {
+                        decoded = svc_token.verify('otp', req.body.token);
+                    } catch ( e ) {
+                        return res.status(400).send('Invalid token.');
+                    }
 
-    if ( ! decoded.user_uid ) {
-        return res.status(400).send('Invalid token.');
-    }
+                    if ( ! decoded.user_uid ) {
+                        return res.status(400).send('Invalid token.');
+                    }
 
-    const user = await get_user({ uuid: decoded.user_uid, cached: false });
-    if ( ! user ) {
-        return res.status(400).send('User not found.');
-    }
+                    const user = await get_user({ uuid: decoded.user_uid, cached: false });
+                    if ( ! user ) {
+                        return res.status(400).send('User not found.');
+                    }
 
-    const svc_otp = req.services.get('otp');
-    if ( ! svc_otp.verify(user.username, user.otp_secret, req.body.code) ) {
+                    const svc_otp = req.services.get('otp');
+                    if ( ! svc_otp.verify(user.username, user.otp_secret, req.body.code) ) {
 
-        // THIS MAY BE COUNTER-INTUITIVE
-        //
-        // A successfully handled request, with the correct format,
-        // but incorrect credentials when NOT using the HTTP
-        // authentication framework provided by RFC 7235, SHOULD
-        // return status 200.
-        //
-        // Source: I asked Julian Reschke in an email, and then he
-        // contributed to this discussion:
-        // https://stackoverflow.com/questions/32752578
+                        // THIS MAY BE COUNTER-INTUITIVE
+                        //
+                        // A successfully handled request, with the correct format,
+                        // but incorrect credentials when NOT using the HTTP
+                        // authentication framework provided by RFC 7235, SHOULD
+                        // return status 200.
+                        //
+                        // Source: I asked Julian Reschke in an email, and then he
+                        // contributed to this discussion:
+                        // https://stackoverflow.com/questions/32752578
 
-        return res.status(200).send({
-            proceed: false,
-        });
-    }
+                        return res.status(200).send({
+                            proceed: false,
+                        });
+                    }
 
-    return await complete_({ req, res, user });
-});
+                    return await complete_({ req, res, user });
+                });
 
 router.post('/login/recovery-code', express.json(), body_parser_error_handler, requireCaptcha({ strictMode: true, eventType: 'login_recovery' }), async (req, res, next) => {
     // either api. subdomain or no subdomain
