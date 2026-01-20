@@ -119,11 +119,22 @@ export class PuterHomepageService extends BaseService {
         // cloudflare turnstile site key
         const turnstileSiteKey = config.services?.['cloudflare-turnstile']?.enabled ? config.services?.['cloudflare-turnstile']?.site_key : null;
 
+        // 使用请求的实际协议和主机名，支持反向代理
+        const actual_protocol = req.protocol;
+        const actual_host = req.get('host');
+        const actual_origin = `${actual_protocol}://${actual_host}`;
+
+        // 构建 API base URL：如果配置了 experimental_no_subdomain，使用同一个域名
+        // 否则使用 api.<host> 的子域名
+        const api_base_url = config.experimental_no_subdomain
+            ? actual_origin
+            : `${actual_protocol}://api.${actual_host.split(':')[0]}${actual_host.includes(':') ? `:${ actual_host.split(':')[1]}` : ''}`;
+
         return res.send(await this.generate_puter_page_html({
             env: config.env,
 
-            app_origin: config.origin,
-            api_origin: config.api_base_url,
+            app_origin: actual_origin,
+            api_origin: api_base_url,
             use_bundled_gui: config.use_bundled_gui,
 
             manifest: this.manifest,
@@ -147,7 +158,7 @@ export class PuterHomepageService extends BaseService {
                 domain: config.domain,
                 protocol: config.protocol,
                 env: config.env,
-                api_base_url: config.api_base_url,
+                api_base_url: api_base_url,
                 thumb_width: config.thumb_width,
                 thumb_height: config.thumb_height,
                 contact_email: config.contact_email,
