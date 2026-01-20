@@ -49,7 +49,7 @@ module.exports = eggspress(['/signup'], {
             res.status(400).send('email username mismatch; please provide a password');
         },
     },
-    mw: [requireCaptcha({ strictMode: true, eventType: 'signup' })], // Conditionally require captcha for signup
+    mw: [], // 禁用 captcha 中间件以支持灵活访问
 }, async (req, res, next) => {
     // either api. subdomain or no subdomain
     if ( require('../helpers').subdomain(req) !== 'api' && require('../helpers').subdomain(req) !== '' )
