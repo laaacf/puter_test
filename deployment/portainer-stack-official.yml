@@ -1,0 +1,38 @@
+---
+# Puter Portainer Stack 配置（使用官方镜像）
+# 注意：此版本使用官方镜像，功能有限制
+# 建议使用命令行部署：docker compose up -d
+version: "3.8"
+services:
+  puter:
+    container_name: puter
+    # 使用官方镜像（不支持反向代理）
+    image: ghcr.io/heyputer/puter:latest
+    restart: unless-stopped
+    ports:
+      - '4100:4100'
+    environment:
+      TZ: Asia/Shanghai
+      PUID: 1000
+      PGID: 1000
+    volumes:
+      # 修改下面的路径为你的实际路径
+      - /home/你的用户名/docker/puter/config:/etc/puter
+      - /home/你的用户名/docker/puter/data:/var/puter
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://127.0.0.1:4100/test || exit 1
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "com.docker.compose.project=puter"
+      - "description=Puter - 使用官方镜像（不支持反向代理）"
+
+# 重要提示：
+# 1. 此配置使用官方镜像，不支持反向代理功能
+# 2. 如需反向代理支持，请使用命令行部署
+# 3. 命令行部署方式：
+#    cd ~/docker/puter
+#    wget https://raw.githubusercontent.com/laaacf/puter_test/main/deployment/docker-compose.yml
+#    docker compose up -d

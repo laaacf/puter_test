@@ -51,18 +51,45 @@ docker compose logs -f puter
 
 ## 🎨 使用 Portainer 部署
 
-### 方法 1：通过 Stack 部署（推荐）
+### ⚠️ 重要限制
 
-1. **打开 Portainer**
-   - 访问你的 Portainer 管理界面
+**Portainer Stack 不支持从 GitHub URL 直接构建自定义镜像！**
 
-2. **创建新的 Stack**
-   - 点击左侧菜单 "Stacks"
-   - 点击 "Add stack"
+如果你需要反向代理和灵活域名访问功能，**请使用命令行部署**。
 
-3. **配置 Stack**
-   - **Name**: `puter`
-   - **Editor**: 将下面的内容粘贴进去
+---
+
+### 方案 1：命令行部署（强烈推荐）
+
+这是**唯一支持完整功能**的方式：
+
+```bash
+# 1. 准备目录
+mkdir -p ~/docker/puter/config
+mkdir -p ~/docker/puter/data
+sudo chown -R 1000:1000 ~/docker/puter
+
+# 2. 下载配置文件
+cd ~/docker/puter
+wget https://raw.githubusercontent.com/laaacf/puter_test/main/deployment/docker-compose.yml
+wget https://raw.githubusercontent.com/laaacf/puter_test/main/deployment/config.json -O config/config.json
+
+# 3. 启动
+docker compose up -d
+```
+
+---
+
+### 方案 2：Portainer + 官方镜像（功能受限）
+
+如果你坚持使用 Portainer，可以：
+1. 先运行命令行部署脚本准备目录
+2. 然后在 Portainer 中使用下面的配置
+
+**限制：**
+- ❌ 不支持反向代理
+- ❌ 不支持 IP 直接访问
+- ✅ 只能通过 puter.localhost 访问
 
 ```yaml
 ---

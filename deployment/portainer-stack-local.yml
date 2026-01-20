@@ -1,0 +1,48 @@
+---
+# Puter Portainer Stack 配置（本地构建版本）
+# 需要先在服务器上克隆仓库，然后使用此配置
+version: "3.8"
+services:
+  puter:
+    container_name: puter
+    # 使用本地仓库构建
+    build:
+      context: /home/你的用户名/docker/puter_test
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - '4100:4100'
+    environment:
+      TZ: Asia/Shanghai
+      PUID: 1000
+      PGID: 1000
+    volumes:
+      # 修改下面的路径为你的实际路径
+      - /home/你的用户名/docker/puter/config:/etc/puter
+      - /home/你的用户名/docker/puter/data:/var/puter
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://127.0.0.1:4100/test || exit 1
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "com.docker.compose.project=puter"
+      - "description=Puter - 支持反向代理（本地构建）"
+
+# 部署步骤：
+# 1. 在服务器上克隆仓库：
+#    cd ~/docker
+#    git clone https://github.com/laaacf/puter_test.git
+#
+# 2. 修改上面的路径：
+#    context: /home/你的用户名/docker/puter_test
+#    volumes 中的路径也要修改
+#
+# 3. 创建目录和配置：
+#    mkdir -p ~/docker/puter/config
+#    mkdir -p ~/docker/puter/data
+#    wget https://raw.githubusercontent.com/laaacf/puter_test/main/deployment/config.json -O ~/docker/puter/config/config.json
+#    sudo chown -R 1000:1000 ~/docker/puter
+#
+# 4. 在 Portainer 中使用此 Stack 配置

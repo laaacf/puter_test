@@ -1,0 +1,48 @@
+---
+# Puter Portainer Stack - 简化版配置
+# 适用于 Portainer 管理，但功能受限
+version: "3.8"
+services:
+  puter:
+    container_name: puter
+    # ⚠️ 使用官方镜像，不支持反向代理功能
+    image: ghcr.io/heyputer/puter:latest
+    # pull_policy: always
+    restart: unless-stopped
+    ports:
+      - '4100:4100'
+    environment:
+      TZ: Asia/Shanghai
+      PUID: 1000
+      PGID: 1000
+    volumes:
+      # ⚠️ 重要：必须先创建这些目录和配置文件
+      - /home/你的用户名/docker/puter/config:/etc/puter
+      - /home/你的用户名/docker/puter/data:/var/puter
+    # 健康检查可选（如果有问题可以注释掉）
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://127.0.0.1:4100/test || exit 1
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "com.docker.compose.project=puter"
+      - "description=Puter 个人云系统（官方镜像版本）"
+
+# ============================================================================
+# ⚠️ 重要说明
+# ============================================================================
+#
+# 此配置使用官方镜像，有以下限制：
+# ❌ 不支持反向代理
+# ❌ 不支持 IP 直接访问
+# ❌ 只能通过 puter.localhost 访问
+#
+# 如需完整功能（反向代理、灵活域名访问），请使用命令行部署：
+#
+# cd ~/docker/puter
+# wget https://raw.githubusercontent.com/laaacf/puter_test/main/deployment/docker-compose.yml
+# docker compose up -d
+#
+# ============================================================================
