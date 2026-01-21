@@ -59,16 +59,7 @@ const parseMetadata = (metadata) => {
 // All other requests
 // -----------------------------------------------------------------------//
 router.all('*', async function (req, res, next) {
-    // 修复子域名提取：只当 hostname 真正以 config.domain 结尾时才提取子域名
-    // 对于其他自定义域名（如 gpt.3868088.xyz, puter.3868088.xyz），不提取子域名
-    let subdomain = '';
-    if ( req.hostname.endsWith(`.${ config.domain}`) ) {
-        subdomain = req.hostname.slice(0, -1 * (config.domain.length + 1));
-    } else if ( req.hostname === config.domain ) {
-        subdomain = '';
-    }
-    // 对于所有其他域名，subdomain 保持为空字符串
-
+    const subdomain = req.hostname.slice(0, -1 * (config.domain.length + 1));
     let path = req.params[0] ? req.params[0] : 'index.html';
 
     // --------------------------------------
