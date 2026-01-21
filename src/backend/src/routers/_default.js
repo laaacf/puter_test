@@ -59,7 +59,15 @@ const parseMetadata = (metadata) => {
 // All other requests
 // -----------------------------------------------------------------------//
 router.all('*', async function (req, res, next) {
-    const subdomain = req.hostname.slice(0, -1 * (config.domain.length + 1));
+    // 修复子域名提取逻辑：只当 hostname 真正以 config.domain 结尾时才提取子域名
+    // 否则将整个 hostname 视为没有子域名（支持自定义域名访问）
+    let subdomain = '';
+    if ( req.hostname.endsWith(config.domain) && req.hostname.length > config.domain.length ) {
+        subdomain = req.hostname.slice(0, -1 * (config.domain.length + 1));
+    } else if ( req.hostname === config.domain ) {
+        subdomain = '';
+    }
+
     let path = req.params[0] ? req.params[0] : 'index.html';
 
     // --------------------------------------
