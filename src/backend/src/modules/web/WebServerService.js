@@ -327,6 +327,9 @@ class WebServerService extends BaseService {
         const app = express();
         this.app = app;
 
+        // 信任反向代理，确保 X-Forwarded-* 头能正确处理
+        app.set('trust proxy', true);
+
         app.set('services', this.services);
 
         this.middlewares = { auth };

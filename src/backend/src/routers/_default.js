@@ -59,7 +59,24 @@ const parseMetadata = (metadata) => {
 // All other requests
 // -----------------------------------------------------------------------//
 router.all('*', async function (req, res, next) {
-    const subdomain = req.hostname.slice(0, -1 * (config.domain.length + 1));
+    // 提取子域名：只有当 hostname 真正以 .config.domain 结尾时才提取
+    // 对于反向代理或自定义域名，不提取子域名
+    let subdomain;
+    const hostname = req.hostname;
+    const domain_suffix = `.${ config.domain}`;
+
+    if ( hostname === config.domain ) {
+        // 正好是主域名，没有子域名
+        subdomain = '';
+    } else if ( hostname.endsWith(domain_suffix) ) {
+        // 是子域名，提取子域名部分
+        subdomain = hostname.slice(0, -1 * (config.domain.length + 1));
+    } else {
+        // 不匹配 config.domain，可能是反向代理或自定义域名
+        // 对于 experimental_no_subdomain 模式，不需要子域名
+        subdomain = '';
+    }
+
     let path = req.params[0] ? req.params[0] : 'index.html';
 
     // --------------------------------------
