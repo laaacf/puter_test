@@ -356,6 +356,8 @@ export class PuterHomepageService extends BaseService {
         <!-- END Custom body content -->
 
         <script>window.puter_gui_enabled = true;</script>
+        <script>window.api_origin = '${e(api_origin)}';</script>
+        <script>window.app_origin = '${e(app_origin)}';</script>
         ${custom_script_tags_str
         }
         ${use_bundled_gui
