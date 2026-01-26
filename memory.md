@@ -1,5 +1,68 @@
 # Puter 项目记忆
 
+## 2026-01-26 - 反向代理重定向循环问题修复
+
+### 背景
+在本地 Mac mini 环境测试时发现，通过反向代理访问 Puter 时出现重定向循环错误，导致页面无法打开。但直接通过 IP 或 localhost 访问正常。
+
+### 问题根源
+1. **子域名提取逻辑缺陷**：原代码假设所有访问都基于 `config.domain`（如 `puter.localhost`）
+2. **反向代理场景失败**：当通过反向代理域名（如 `puter.example.com`）访问时，原逻辑会错误地从反向代理域名中提取基于 `puter.localhost` 的子域名
+3. **缺少 trust proxy 设置**：Express 没有配置信任反向代理，导致 `X-Forwarded-*` headers 被忽略
+
+**具体表现：**
+- 直接访问：http://localhost:4100 ✅ 正常
+- 反向代理访问：❌ 重定向循环，页面无法打开
+
+### 解决方案
+修改了两个关键文件：
+
+1. **WebServerService.js (第330-331行)**
+   - 添加 `app.set('trust proxy', true)`
+   - 让 Express 信任反向代理的 `X-Forwarded-*` headers
+
+2. **_default.js (第62-78行)**
+   - 重写子域名提取逻辑
+   - 只在 hostname 真正匹配 `config.domain` 时提取子域名
+   - 对于反向代理或自定义域名，将 subdomain 设为空字符串
+
+**修改后的逻辑：**
+```javascript
+let subdomain;
+const hostname = req.hostname;
+const domain_suffix = '.' + config.domain;
+
+if (hostname === config.domain) {
+    subdomain = '';
+} else if (hostname.endsWith(domain_suffix)) {
+    subdomain = hostname.slice(0, -1 * (config.domain.length + 1));
+} else {
+    // 反向代理或自定义域名
+    subdomain = '';
+}
+```
+
+### 关键经验
+1. **反向代理需要 trust proxy 设置**：Express 必须显式配置 `app.set('trust proxy', true)` 才能正确处理反向代理的 headers
+2. **子域名提取要考虑边界情况**：不能假设所有请求都符合 `{subdomain}.{domain}` 格式
+3. **本地测试很重要**：在本地 Mac mini 测试发现了服务器上未曾发现的问题
+4. **版本控制很重要**：之前能工作的修改在 GitHub 版本中丢失，导致问题反复出现
+
+### 最终结果
+✅ 直接访问 http://localhost:4100 - 正常
+✅ 反向代理访问 - 正常
+
+### Git 提交记录
+- `5069918d` fix: 修复反向代理重定向循环问题
+- 已推送到 GitHub main 分支
+
+### 技术细节
+- 配置：`config.domain = "puter.localhost"`
+- 反向代理域名：可以是任意自定义域名（如 `puter.example.com`）
+- Express trust proxy：必须设置为 true 才能读取 `X-Forwarded-Host` 等 headers
+
+---
+
 ## 2025-01-20 - 多域名访问问题解决
 
 ### 背景
@@ -52,8 +115,72 @@ const subdomain = req.hostname.slice(0, -1 * (config.domain.length + 1));
   - 重启服务：`pkill -f 'node.*run-selfhosted' && cd ~/docker/puter-unlocked && nohup /usr/bin/node ./tools/run-selfhosted.js > /tmp/puter.log 2>&1 &`
 
 ### 后续计划
-- 考虑 Docker 部署（更灵活、更安全）
-- 与服务器适当隔离
+- ✅ Docker 部署已完成 - 详见 deployment/docker-deploy/
+
+---
+
+## 2025-01-26 - Docker 部署方案实现
+
+### 背景
+用户在重启 Puter 服务时遇到 Node.js 版本问题。系统顽固地使用 Node.js v20.18.3，而项目需要 v24.13.0。错误信息：
+```
+SyntaxError: Cannot use import statement outside a module
+```
+
+### 解决方案
+**实现完整的 Docker 部署方案**，彻底避免 Node.js 版本冲突。
+
+### 改动内容
+创建 `deployment/docker-deploy/` 目录，包含：
+
+1. **config.json** - Puter 配置文件
+   - 启用多域名支持（allow_all_host_values）
+   - 禁用 IP 验证（disable_ip_validate_event）
+   - 启用自定义域名（custom_domains_enabled）
+
+2. **docker-compose.yml** - Docker Compose 配置
+   - 使用本地 Dockerfile 构建
+   - 挂载配置和数据目录
+   - 暴露 4100 端口
+
+3. **deploy.sh** - 自动部署脚本
+   - 检查 Docker 环境
+   - 自动创建目录结构
+   - 构建并启动容器
+
+4. **README.md** - 详细部署文档
+   - 快速开始指南
+   - 管理命令说明
+   - 反向代理配置
+   - 数据备份方案
+   - 常见问题解答
+
+### 部署优势
+- ✅ **固定 Node.js 版本**：使用 Docker 镜像中的 Node.js 24-alpine
+- ✅ **环境隔离**：不影响系统 Node.js 版本
+- ✅ **一键部署**：`./deploy.sh` 自动完成
+- ✅ **易于管理**：简单的 Docker Compose 命令
+- ✅ **数据持久化**：配置和数据独立存储
+
+### 快速使用
+```bash
+# 上传到服务器
+scp -r deployment/docker-deploy your-server:~/
+
+# 在服务器上运行
+cd ~/docker-deploy
+chmod +x deploy.sh
+./deploy.sh
+```
+
+### 管理命令
+- 查看日志：`docker compose logs -f`
+- 重启服务：`docker compose restart`
+- 停止服务：`docker compose down`
+
+### 文件位置
+- 部署文件：`deployment/docker-deploy/`
+- 文档：`deployment/docker-deploy/README.md`
 
 ---
 
