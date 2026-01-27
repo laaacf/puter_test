@@ -1,5 +1,271 @@
 # Puter 项目记忆
 
+## 2026-01-27 - Viewer 图片查看器实现成功
+
+### 背景
+用户报告 Puter 开源版本的 builtin apps（viewer、editor、pdf 等）是半成品，无法正常使用。特别是 viewer 图片查看器打开图片时显示 "Error loading image"。
+
+### 问题根源分析
+
+**问题1：数据库 index_url 指向官方版本**
+- 原数据库记录：`index_url='https://viewer.puter.com/index.html'`
+- 导致系统加载官方的 HTTPS viewer，而文件 URL 是 HTTP 的 localhost
+- 结果：混合内容错误（Mixed Content）和 CORS 错误
+
+**问题2：viewer 应用没有使用 URL 参数传递文件信息**
+- Puter 通过 URL 参数传递文件信息（`puter.item.uid`、`puter.item.read_url` 等）
+- 原版 viewer 只通过 postMessage 等待父窗口发送消息
+- 导致文件信息无法获取
+
+### 解决方案
+
+**修复1：更新数据库中 builtin apps 的 index_url**
+```sql
+-- 更新 viewer
+UPDATE apps SET index_url='https://builtins.namespaces.puter.com/viewer' WHERE name='viewer';
+
+-- 更新其他 apps
+UPDATE apps SET index_url='https://builtins.namespaces.puter.com/editor' WHERE name='editor';
+UPDATE apps SET index_url='https://builtins.namespaces.puter.com/pdf' WHERE name='pdf';
+UPDATE apps SET index_url='https://builtins.namespaces.puter.com/player' WHERE name='player';
+```
+
+这样 `launch_app.js` 会将 URL 转换为 `${window.gui_origin}/builtin/${name}`，指向本地版本。
+
+**修复2：修改 viewer 支持从 URL 参数加载文件**
+```javascript
+// 优先使用 URL 参数中的 read_url（最直接）
+if (params.itemReadUrl) {
+    displayImage(params.itemReadUrl, item);
+    return;
+}
+
+// 备用：使用 SDK
+if (typeof window.puter !== 'undefined') {
+    const blob = await window.puter.fs.read({ uid: params.itemUid });
+    const url = URL.createObjectURL(blob);
+    displayImage(url, item);
+    return;
+}
+
+// 最后备用：直接使用 /item/{uid}
+const directUrl = `/item/${params.itemUid}`;
+displayImage(directUrl, item);
+```
+
+**修复3：viewer 功能完整实现**
+- ✅ 缩放：放大/缩小/适应屏幕/实际尺寸
+- ✅ 旋转：左旋转/右旋转 90°
+- ✅ 全屏模式
+- ✅ 键盘快捷键（+, -, F, A, L, R, F11）
+- ✅ 鼠标滚轮缩放（Ctrl+scroll）
+- ✅ 文件信息显示（名称、大小、类型）
+- ✅ 调试面板（实时日志）
+
+### 修复效果
+- ✅ Viewer 能正常显示图片
+- ✅ 支持所有基本操作（缩放、旋转、全屏）
+- ✅ 不依赖外部域名（viewer.puter.com）
+- ✅ 使用本地 `/builtin/viewer` 路径
+- ✅ 调试信息清晰可见
+
+### 数据库变更记录
+```bash
+# 查看当前状态
+sqlite3 volatile/runtime/puter-database.sqlite \
+  "SELECT name, index_url FROM apps WHERE name IN ('viewer', 'editor', 'pdf', 'player');"
+
+# 结果：
+# viewer|https://builtins.namespaces.puter.com/viewer
+# editor|https://builtins.namespaces.puter.com/editor
+# pdf|https://builtins.namespaces.puter.com/pdf
+# player|https://builtins.namespaces.puter.com/player
+```
+
+### 关键经验
+1. **Builtin apps 需要使用特定的 index_url 格式**：`https://builtins.namespaces.puter.com/{name}` 会被转换为 `/builtin/{name}`
+2. **URL 参数是传递文件信息的主要方式**：不要只依赖 postMessage
+3. **read_url 是最可靠的加载方式**：不需要 SDK，直接使用签名 URL
+4. **调试面板对开发很有帮助**：能快速定位问题
+5. **数据库迁移可能不会自动执行**：需要手动检查和更新
+
+### 下一步计划
+- ✅ Viewer - 已完成
+- ✅ Editor - 已完成
+- ✅ PDF Viewer - 已完成
+- ✅ Player - 已完成
+- ✅ Draw - 已完成
+- ✅ Code - 已完成
+
+### 所有 Builtin Apps 实现完成（2026-01-27）
+
+在成功实现 Viewer 后，继续实现了其余 4 个 builtin apps：
+
+#### 1. Editor - 文本编辑器 ✅
+**功能：**
+- 打开和编辑文本文件
+- 自动保存（2秒延迟）
+- 手动保存（Ctrl+S）
+- 撤销/重做
+- Tab 键插入4个空格
+- 实时显示行数和字符数
+- 状态指示器（已保存/未保存/保存中/错误）
+
+**文件：** `src/builtin/editor/index.html`
+
+#### 2. PDF Viewer - PDF 查看器 ✅
+**功能：**
+- 使用 PDF.js 库渲染 PDF
+- 翻页（上一页/下一页）
+- 缩放（放大/缩小/适应宽度）
+- 页面导航（键盘方向键）
+- 全屏模式（F11）
+- 显示页码和总页数
+- 显示文件信息
+
+**文件：** `src/builtin/pdf/index.html`
+
+#### 3. Player - 媒体播放器 ✅
+**功能：**
+- 支持音频文件（mp3, wav, ogg, aac, flac, m4a）
+- 支持视频文件（mp4, webm, ogg, mov, avi, mkv）
+- 自动识别文件类型
+- HTML5 原生控制器
+- 键盘快捷键：
+  - 空格/K：播放/暂停
+  - 方向键：快进/快退5秒
+  - 上/下：调整音量
+  - F：全屏
+  - M：静音
+- 显示分辨率、时长、文件大小
+
+**文件：** `src/builtin/player/index.html`
+
+#### 4. Draw - 绘图工具 ✅
+**功能：**
+- 画笔工具（可调节颜色和粗细）
+- 橡皮擦工具
+- 颜色选择器
+- 画笔大小调节（1-50px）
+- 清空画布
+- 保存到 Puter 或下载到本地
+- 支持鼠标和触摸操作
+- 键盘快捷键：B（画笔）、E（橡皮擦）、Ctrl+S（保存）
+- 响应式画布（自动适应窗口大小）
+
+**文件：** `src/builtin/draw/index.html`
+
+#### 5. Code - 代码编辑器 ✅
+**功能：**
+- 语法高亮显示（根据文件扩展名识别语言）
+- 行号显示
+- 自动保存（2秒延迟）
+- 手动保存（Ctrl+S）
+- 撤销/重做
+- Tab 键插入4个空格
+- Ctrl+/ 注释/取消注释
+- 显示语言类型、行数、字符数
+- 支持 30+ 编程语言
+
+**支持的语言：** JavaScript, TypeScript, Python, Java, C, C++, C#, PHP, Ruby, Go, Rust, Kotlin, Swift, HTML, CSS, SCSS, XML, JSON, YAML, Markdown, SQL, Shell, Bash 等
+
+**文件：** `src/builtin/code/index.html`
+
+### 实现总结
+
+**共同特性：**
+1. ✅ 所有应用都支持从 URL 参数加载文件
+2. ✅ 优先使用 read_url（不依赖 SDK）
+3. ✅ 统一的设计风格（暗色主题）
+4. ✅ 键盘快捷键支持
+5. ✅ 实时状态显示
+6. ✅ 错误处理和用户提示
+7. ✅ 完全独立运行（无外部依赖，除了 PDF.js）
+
+**文件结构：**
+```
+src/builtin/
+├── viewer/index.html  - 图片查看器
+├── editor/index.html  - 文本编辑器
+├── pdf/index.html     - PDF 查看器
+├── player/index.html  - 媒体播放器
+├── draw/index.html    - 绘图工具
+└── code/index.html    - 代码编辑器
+```
+
+**数据库配置：**
+所有 apps 的 index_url 都指向 `https://builtins.namespaces.puter.com/{name}`，系统会自动转换为 `/builtin/{name}`。
+
+**测试建议：**
+1. Viewer - 上传图片并打开测试缩放、旋转功能
+2. Editor - 创建文本文件测试编辑和保存
+3. PDF - 上传 PDF 测试翻页和缩放
+4. Player - 上传音频/视频测试播放控制
+5. Draw - 新建绘图画图并保存
+6. Code - 创建代码文件测试编辑功能
+
+---
+
+## 2026-01-27 - 开发模式下强制使用打包 GUI
+
+### 背景
+用户报告 http://puter.localhost:4100/ 和 http://192.168.50.152:4100/ 都显示空白页面。之前虽然修复了 `use_bundled_gui` 默认值和 CSS 加载，但在开发环境（env = "dev"）下，HTML 仍然使用 `/src/` 路径而不是 `/dist/` 路径。
+
+### 问题根源
+**配置文件中 `env` 设置为 `"dev"`**，导致：
+- `PuterHomepageService.js` 第 215-216 行的逻辑：`const asset_dir = env === 'dev' ? '/src' : '/dist'`
+- 即使 `use_bundled_gui = true`，在 `env === 'dev'` 时仍使用 `/src/` 路径
+- `/src/` 路径下的文件在打包构建后不存在，导致页面空白
+
+**具体表现：**
+- HTML 包含 `/src/favicons/` 等路径
+- 但实际文件在 `/dist/` 目录
+- 浏览器加载 404，页面空白
+
+### 解决方案
+**修改 `PuterHomepageService.js` 第 215-217 行逻辑：**
+```javascript
+// 修改前
+const asset_dir = env === 'dev'
+    ? '/src' : '/dist';
+
+// 修改后
+// 如果 use_bundled_gui 为 true，强制使用打包的 GUI
+const asset_dir = (env === 'dev' && !use_bundled_gui)
+    ? '/src' : '/dist';
+```
+
+**新逻辑：**
+- 如果 `env === 'dev'` **且** `use_bundled_gui` 为 false → 使用 `/src`
+- 其他所有情况 → 使用 `/dist`
+
+这样即使环境是 "dev"，只要 `use_bundled_gui = true`（默认值），就会使用打包的 GUI。
+
+### 修复效果
+- ✅ HTML 正确使用 `/dist/` 路径
+- ✅ `window.gui_env = 'prod'` 正确设置
+- ✅ bundle.min.js (3.8MB) 正常加载
+- ✅ bundle.min.css (145KB) 正常加载
+- ✅ 页面能正常显示
+
+### 配置说明
+当前 `volatile/config/config.json` 设置：
+```json
+{
+    "env": "dev",
+    // use_bundled_gui 未设置，使用代码默认值 true
+}
+```
+
+由于 `use_bundled_gui` 默认为 `true`（代码第 140 行：`config.use_bundled_gui ?? true`），即使用户保持 `env = "dev"`，也能正常使用打包的 GUI。
+
+### 关键经验
+1. **`use_bundled_gui` 应该优先于 `env` 判断**：打包 GUI 的选择应该由明确的配置控制，而不是隐式的环境判断
+2. **本地测试也应该用打包 GUI**：避免开发环境和生产环境的行为差异
+3. **配置默认值很关键**：`use_bundled_gui` 默认为 true 确保了合理的默认行为
+
+---
+
 ## 2026-01-27 - Docker 部署 CSS 加载问题彻底解决
 
 ### 背景

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Player - Puter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .player-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0a0a0a;
+            overflow: hidden;
+        }
+
+        #mediaPlayer {
+            max-width: 100%;
+            max-height: 100%;
+            outline: none;
+        }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 20px;
+            font-size: 18px;
+            color: #888;
+        }
+
+        .error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 20px;
+            color: #ff6b6b;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .error-message {
+            font-size: 18px;
+            white-space: pre-line;
+        }
+
+        .error-hint {
+            font-size: 14px;
+            color: #aaa;
+            margin-top: 10px;
+            white-space: pre-line;
+        }
+
+        .error-icon {
+            font-size: 64px;
+        }
+
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div class="player-container" id="container">
+        <video id="mediaPlayer" controls style="display: none;"></video>
+        <div class="loading" id="loading">
+            <div>Loading media...</div>
+        </div>
+        <div class="error" id="error" style="display: none;">
+            <div id="errorMessage">Failed to load media</div>
+        </div>
+    </div>
+
+    <div class="info-panel" id="infoPanel"></div>
+
+    <script>
+        const player = document.getElementById('mediaPlayer');
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const errorMessage = document.getElementById('errorMessage');
+        const infoPanel = document.getElementById('infoPanel');
+
+        // 获取URL参数
+        function getURLParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                itemUid: params.get('puter.item.uid'),
+                itemPath: params.get('puter.item.path'),
+                itemName: params.get('puter.item.name'),
+                itemReadUrl: params.get('puter.item.read_url'),
+                itemSize: params.get('puter.item.size')
+            };
+        }
+
+        // 显示错误
+        function showError(message) {
+            console.error('[Player]', message);
+            loading.style.display = 'none';
+            error.style.display = 'flex';
+            errorMessage.textContent = message;
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // 格式化时长
+        function formatDuration(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+
+            if (h > 0) {
+                return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // 检测浏览器和格式兼容性
+        function checkBrowserCompatibility(isVideo, extension) {
+            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+            const isMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+            if (!isVideo) return { compatible: true };
+
+            // Safari 对视频格式的限制
+            if (isSafari || isMobile) {
+                const safariSupportedFormats = ['mp4', 'webm', 'mov'];
+                if (!safariSupportedFormats.includes(extension)) {
+                    return {
+                        compatible: false,
+                        browser: isMobile ? 'iOS' : 'Safari',
+                        reason: `Safari 不支持 ${extension.toUpperCase()} 格式。请使用 MP4 (H.264) 格式，或换用 Chrome 浏览器。`,
+                    };
+                }
+            }
+
+            return { compatible: true };
+        }
+
+        // 加载媒体
+        async function loadMedia() {
+            const params = getURLParams();
+            console.log('[Player] URL params:', params);
+
+            if (!params.itemReadUrl) {
+                showError('No media file specified');
+                return;
+            }
+
+            const itemName = params.itemName || 'unknown';
+            const extension = itemName.split('.').pop().toLowerCase();
+
+            // 判断文件类型
+            const audioExtensions = ['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a'];
+            const videoExtensions = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv'];
+
+            const isAudio = audioExtensions.includes(extension);
+            const isVideo = videoExtensions.includes(extension);
+
+            console.log('[Player] File type check:', { extension, isAudio, isVideo });
+
+            if (!isAudio && !isVideo) {
+                showError('Unsupported media format: ' + extension);
+                return;
+            }
+
+            // 检查浏览器兼容性
+            if (isVideo) {
+                const compatibility = checkBrowserCompatibility(true, extension);
+                if (!compatibility.compatible) {
+                    showError(compatibility.reason);
+                    return;
+                }
+            }
+
+            try {
+                console.log('[Player] Loading media:', itemName);
+                console.log('[Player] Read URL:', params.itemReadUrl);
+
+                // 根据类型设置播放器
+                if (isAudio) {
+                    const audio = document.createElement('audio');
+                    audio.id = 'mediaPlayer';
+                    audio.controls = true;
+                    audio.style.width = '100%';
+                    audio.style.maxWidth = '600px';
+                    player.parentNode.replaceChild(audio, player);
+                    audio.src = params.itemReadUrl;
+
+                    audio.addEventListener('loadedmetadata', () => {
+                        console.log('[Player] Audio loaded successfully');
+                        loading.style.display = 'none';
+                        error.style.display = 'none';
+                        audio.style.display = 'block';
+
+                        infoPanel.innerHTML = `
+                            <strong>${itemName}</strong><br>
+                            ${formatDuration(audio.duration)} • ${formatFileSize(params.itemSize)}
+                        `;
+                    });
+
+                    audio.addEventListener('error', (e) => {
+                        console.error('[Player] Audio error:', audio.error);
+                        const errorMsg = audio.error ? `Code ${audio.error.code}: ${audio.error.message}` : 'Unknown error';
+                        showError('Failed to load audio: ' + errorMsg);
+                    });
+                } else {
+                    player.src = params.itemReadUrl;
+                    console.log('[Player] Video src set to:', params.itemReadUrl);
+
+                    player.addEventListener('loadedmetadata', () => {
+                        console.log('[Player] Video loaded successfully');
+                        console.log('[Player] Video info:', {
+                            width: player.videoWidth,
+                            height: player.videoHeight,
+                            duration: player.duration
+                        });
+                        loading.style.display = 'none';
+                        error.style.display = 'none';
+                        player.style.display = 'block';
+
+                        infoPanel.innerHTML = `
+                            <strong>${itemName}</strong><br>
+                            ${player.videoWidth}x${player.videoHeight} • ${formatDuration(player.duration)} • ${formatFileSize(params.itemSize)}
+                        `;
+                    });
+
+                    player.addEventListener('error', (e) => {
+                        console.error('[Player] Video error:', player.error);
+                        console.error('[Player] Video network state:', player.networkState);
+                        console.error('[Player] Video ready state:', player.readyState);
+
+                        let errorMsg = player.error ? `Code ${player.error.code}: ${player.error.message}` : 'Unknown error';
+
+                        // 添加调试信息
+                        if (player.error && player.error.code === 4) {
+                            errorMsg += '\n\nSafari 不支持此视频格式。请确保视频是 MP4 (H.264 + AAC) 格式。';
+                            errorMsg += '\n\nChrome 可以播放，但 Safari 不支持。建议：';
+                            errorMsg += '\n1. 使用 FFmpeg 转换：ffmpeg -i input.mkv -c:v libx264 -c:a aac output.mp4';
+                            errorMsg += '\n2. 或使用 Chrome/Edge 浏览器';
+                        }
+
+                        showError('Failed to load video: ' + errorMsg);
+                    });
+                }
+
+            } catch (err) {
+                console.error('[Player] Error loading media:', err);
+                showError('Failed to load media: ' + err.message);
+            }
+        }
+
+        // 键盘快捷键
+        document.addEventListener('keydown', (e) => {
+            const p = document.getElementById('mediaPlayer');
+            if (!p || p.style.display === 'none') return;
+
+            switch(e.key.toLowerCase()) {
+                case ' ':
+                case 'k':
+                    e.preventDefault();
+                    if (p.paused) p.play();
+                    else p.pause();
+                    break;
+                case 'arrowleft':
+                    e.preventDefault();
+                    p.currentTime = Math.max(0, p.currentTime - 5);
+                    break;
+                case 'arrowright':
+                    e.preventDefault();
+                    p.currentTime = Math.min(p.duration, p.currentTime + 5);
+                    break;
+                case 'arrowup':
+                    e.preventDefault();
+                    p.volume = Math.min(1, p.volume + 0.1);
+                    break;
+                case 'arrowdown':
+                    e.preventDefault();
+                    p.volume = Math.max(0, p.volume - 0.1);
+                    break;
+                case 'f':
+                    e.preventDefault();
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen();
+                    } else {
+                        p.requestFullscreen();
+                    }
+                    break;
+                case 'm':
+                    e.preventDefault();
+                    p.muted = !p.muted;
+                    break;
+            }
+        });
+
+        // 初始化
+        console.log('[Player] Initializing...');
+        loadMedia();
+    </script>
+</body>
+</html>

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Editor - Puter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: #2a2a2a;
+            border-bottom: 1px solid #3a3a3a;
+        }
+
+        .toolbar button {
+            background: #3a3a3a;
+            border: none;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .toolbar button:hover {
+            background: #4a4a4a;
+        }
+
+        .toolbar button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .toolbar .save-status {
+            margin-left: auto;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .toolbar .save-status.saved {
+            color: #4caf50;
+        }
+
+        .toolbar .save-status.saving {
+            color: #ff9800;
+        }
+
+        .toolbar .save-status.error {
+            color: #f44336;
+        }
+
+        .editor-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        #editor {
+            flex: 1;
+            background: #1a1a1a;
+            color: #fff;
+            border: none;
+            outline: none;
+            padding: 20px;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: none;
+            tab-size: 4;
+        }
+
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 10;
+        }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            height: 100%;
+            font-size: 18px;
+            color: #888;
+        }
+
+        .error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 20px;
+            color: #ff6b6b;
+        }
+
+        .error-message {
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button id="saveBtn" title="Save (Ctrl+S)">💾 Save</button>
+        <button id="undoBtn" title="Undo (Ctrl+Z)">↶ Undo</button>
+        <button id="redoBtn" title="Redo (Ctrl+Y)">↷ Redo</button>
+        <span class="save-status" id="saveStatus">Ready</span>
+    </div>
+
+    <div class="editor-container">
+        <textarea id="editor" style="display: none;" spellcheck="false"></textarea>
+        <div class="loading" id="loading">
+            <div>Loading file...</div>
+        </div>
+        <div class="error" id="error" style="display: none;">
+            <div class="error-message" id="errorMessage">Failed to load file</div>
+        </div>
+    </div>
+
+    <div class="info-panel" id="infoPanel"></div>
+
+    <script>
+        const editor = document.getElementById('editor');
+        const saveBtn = document.getElementById('saveBtn');
+        const undoBtn = document.getElementById('undoBtn');
+        const redoBtn = document.getElementById('redoBtn');
+        const saveStatus = document.getElementById('saveStatus');
+        const infoPanel = document.getElementById('infoPanel');
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const errorMessage = document.getElementById('errorMessage');
+
+        let fileUID = null;
+        let writeURL = null;
+        let itemName = null;
+        let isModified = false;
+        let autoSaveTimer = null;
+
+        // 获取URL参数
+        function getURLParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                itemUid: params.get('puter.item.uid'),
+                itemPath: params.get('puter.item.path'),
+                itemName: params.get('puter.item.name'),
+                itemReadUrl: params.get('puter.item.read_url'),
+                itemWriteUrl: params.get('puter.item.write_url'),
+                itemSize: params.get('puter.item.size')
+            };
+        }
+
+        // 显示状态
+        function setStatus(text, type = 'normal') {
+            saveStatus.textContent = text;
+            saveStatus.className = 'save-status ' + type;
+        }
+
+        // 显示错误
+        function showError(message) {
+            console.error('[Editor]', message);
+            loading.style.display = 'none';
+            error.style.display = 'flex';
+            errorMessage.textContent = message;
+        }
+
+        // 更新信息面板
+        function updateInfo() {
+            const lines = editor.value.split('\n').length;
+            const chars = editor.value.length;
+            const selection = editor.selectionStart !== editor.selectionEnd
+                ? `${Math.abs(editor.selectionEnd - editor.selectionStart)} chars selected`
+                : '';
+
+            infoPanel.innerHTML = `
+                ${itemName || 'Untitled'}<br>
+                Lines: ${lines} • Chars: ${chars.toLocaleString()}<br>
+                ${selection}
+            `;
+        }
+
+        // 加载文件
+        async function loadFile() {
+            const params = getURLParams();
+
+            if (!params.itemUid) {
+                showError('No file specified');
+                return;
+            }
+
+            fileUID = params.itemUid;
+            writeURL = params.itemWriteUrl;
+            itemName = params.itemName;
+
+            try {
+                let content;
+
+                // 优先使用 read_url
+                if (params.itemReadUrl) {
+                    console.log('[Editor] Loading from read_url:', params.itemReadUrl);
+                    const response = await fetch(params.itemReadUrl);
+                    content = await response.text();
+                } else {
+                    showError('No read URL provided');
+                    return;
+                }
+
+                // 显示编辑器
+                loading.style.display = 'none';
+                error.style.display = 'none';
+                editor.style.display = 'block';
+                editor.value = content;
+
+                updateInfo();
+                setStatus('Loaded', 'saved');
+
+            } catch (err) {
+                console.error('[Editor] Error loading file:', err);
+                showError('Failed to load file: ' + err.message);
+            }
+        }
+
+        // 保存文件
+        async function saveFile() {
+            if (!writeURL) {
+                setStatus('No write URL', 'error');
+                return;
+            }
+
+            setStatus('Saving...', 'saving');
+            saveBtn.disabled = true;
+
+            try {
+                const content = editor.value;
+
+                const response = await fetch(writeURL, {
+                    method: 'POST',
+                    body: content,
+                    headers: {
+                        'Content-Type': 'text/plain'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Save failed: ' + response.statusText);
+                }
+
+                isModified = false;
+                setStatus('Saved', 'saved');
+
+            } catch (err) {
+                console.error('[Editor] Error saving file:', err);
+                setStatus('Save failed: ' + err.message, 'error');
+            } finally {
+                saveBtn.disabled = false;
+            }
+        }
+
+        // 自动保存
+        function scheduleAutoSave() {
+            if (autoSaveTimer) {
+                clearTimeout(autoSaveTimer);
+            }
+
+            isModified = true;
+            setStatus('Unsaved');
+
+            autoSaveTimer = setTimeout(() => {
+                if (isModified) {
+                    saveFile();
+                }
+            }, 2000); // 2秒后自动保存
+        }
+
+        // 事件监听
+        saveBtn.addEventListener('click', () => saveFile());
+
+        undoBtn.addEventListener('click', () => {
+            document.execCommand('undo');
+            editor.focus();
+        });
+
+        redoBtn.addEventListener('click', () => {
+            document.execCommand('redo');
+            editor.focus();
+        });
+
+        editor.addEventListener('input', () => {
+            scheduleAutoSave();
+            updateInfo();
+        });
+
+        editor.addEventListener('keyup', updateInfo);
+        editor.addEventListener('click', updateInfo);
+
+        // 键盘快捷键
+        editor.addEventListener('keydown', (e) => {
+            // Ctrl+S: 保存
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveFile();
+            }
+            // Tab: 插入空格而不是切换焦点
+            else if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = editor.selectionStart;
+                const end = editor.selectionEnd;
+                editor.value = editor.value.substring(0, start) + '    ' + editor.value.substring(end);
+                editor.selectionStart = editor.selectionEnd = start + 4;
+                scheduleAutoSave();
+            }
+        });
+
+        // 初始化
+        console.log('[Editor] Initializing...');
+        loadFile();
+    </script>
+</body>
+</html>

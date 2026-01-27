@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draw - Puter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: #2a2a2a;
+            border-bottom: 1px solid #3a3a3a;
+        }
+
+        .toolbar button {
+            background: #3a3a3a;
+            border: none;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .toolbar button:hover {
+            background: #4a4a4a;
+        }
+
+        .toolbar button.active {
+            background: #4a90e2;
+        }
+
+        .toolbar .separator {
+            width: 1px;
+            height: 24px;
+            background: #3a3a3a;
+            margin: 0 5px;
+        }
+
+        .toolbar .tool-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .toolbar label {
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        .toolbar input[type="color"] {
+            width: 40px;
+            height: 32px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: transparent;
+        }
+
+        .toolbar input[type="range"] {
+            width: 100px;
+        }
+
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0a0a0a;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #canvas {
+            background: #fff;
+            cursor: crosshair;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <div class="tool-group">
+            <button id="brushTool" class="active" title="Brush">✏️ Brush</button>
+            <button id="eraserTool" title="Eraser">🧹 Eraser</button>
+        </div>
+        <div class="separator"></div>
+        <div class="tool-group">
+            <label>Color:</label>
+            <input type="color" id="colorPicker" value="#000000">
+        </div>
+        <div class="separator"></div>
+        <div class="tool-group">
+            <label>Size:</label>
+            <input type="range" id="brushSize" min="1" max="50" value="5">
+            <span id="sizeLabel">5px</span>
+        </div>
+        <div class="separator"></div>
+        <div class="tool-group">
+            <button id="clearBtn" title="Clear Canvas">🗑️ Clear</button>
+            <button id="saveBtn" title="Save Image">💾 Save</button>
+        </div>
+    </div>
+
+    <div class="canvas-container" id="container">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="info-panel" id="infoPanel"></div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('container');
+        const infoPanel = document.getElementById('infoPanel');
+
+        const brushTool = document.getElementById('brushTool');
+        const eraserTool = document.getElementById('eraserTool');
+        const colorPicker = document.getElementById('colorPicker');
+        const brushSize = document.getElementById('brushSize');
+        const sizeLabel = document.getElementById('sizeLabel');
+        const clearBtn = document.getElementById('clearBtn');
+        const saveBtn = document.getElementById('saveBtn');
+
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let currentTool = 'brush'; // brush or eraser
+        let brushColor = '#000000';
+        let lineWidth = 5;
+        let writeURL = null;
+        let itemName = null;
+
+        // 初始化画布
+        function initCanvas() {
+            // 设置画布大小为容器大小减去边距
+            const margin = 40;
+            canvas.width = container.clientWidth - margin;
+            canvas.height = container.clientHeight - margin;
+
+            // 填充白色背景
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 设置默认画笔样式
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            updateInfo();
+        }
+
+        // 获取URL参数
+        function getURLParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                itemUid: params.get('puter.item.uid'),
+                itemName: params.get('puter.item.name'),
+                itemWriteUrl: params.get('puter.item.write_url')
+            };
+        }
+
+        // 更新信息面板
+        function updateInfo() {
+            infoPanel.innerHTML = `
+                ${itemName ? itemName : 'New Drawing'}<br>
+                ${canvas.width}x${canvas.height}px<br>
+                Tool: ${currentTool === 'brush' ? '✏️ Brush' : '🧹 Eraser'} • Size: ${lineWidth}px
+            `;
+        }
+
+        // 获取鼠标/触摸位置
+        function getPosition(e) {
+            const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
+
+            if (e.touches) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        // 开始绘画
+        function startDrawing(e) {
+            e.preventDefault();
+            isDrawing = true;
+            const pos = getPosition(e);
+            lastX = pos.x;
+            lastY = pos.y;
+
+            // 画一个点（点击时的效果）
+            draw(e);
+        }
+
+        // 绘画
+        function draw(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+
+            const pos = getPosition(e);
+
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(pos.x, pos.y);
+
+            ctx.strokeStyle = currentTool === 'eraser' ? '#ffffff' : brushColor;
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
+
+            lastX = pos.x;
+            lastY = pos.y;
+        }
+
+        // 停止绘画
+        function stopDrawing() {
+            isDrawing = false;
+        }
+
+        // 清空画布
+        function clearCanvas() {
+            if (confirm('Are you sure you want to clear the canvas?')) {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+
+        // 保存图片
+        async function saveImage() {
+            try {
+                const dataURL = canvas.toDataURL('image/png');
+                const blob = await (await fetch(dataURL)).blob();
+
+                if (writeURL) {
+                    // 保存到 Puter
+                    const response = await fetch(writeURL, {
+                        method: 'POST',
+                        body: blob
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Save failed');
+                    }
+
+                    alert('Saved successfully!');
+                } else {
+                    // 下载到本地
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = itemName || 'drawing.png';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }
+            } catch (err) {
+                console.error('[Draw] Error saving:', err);
+                alert('Failed to save: ' + err.message);
+            }
+        }
+
+        // 切换工具
+        function setTool(tool) {
+            currentTool = tool;
+            brushTool.classList.toggle('active', tool === 'brush');
+            eraserTool.classList.toggle('active', tool === 'eraser');
+            updateInfo();
+        }
+
+        // 事件监听
+        brushTool.addEventListener('click', () => setTool('brush'));
+        eraserTool.addEventListener('click', () => setTool('eraser'));
+
+        colorPicker.addEventListener('input', (e) => {
+            brushColor = e.target.value;
+            if (currentTool === 'eraser') {
+                setTool('brush');
+            }
+        });
+
+        brushSize.addEventListener('input', (e) => {
+            lineWidth = parseInt(e.target.value);
+            sizeLabel.textContent = lineWidth + 'px';
+            updateInfo();
+        });
+
+        clearBtn.addEventListener('click', clearCanvas);
+        saveBtn.addEventListener('click', saveImage);
+
+        // 鼠标事件
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        // 触摸事件
+        canvas.addEventListener('touchstart', startDrawing);
+        canvas.addEventListener('touchmove', draw);
+        canvas.addEventListener('touchend', stopDrawing);
+
+        // 键盘快捷键
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'b' || e.key === 'B') {
+                setTool('brush');
+            } else if (e.key === 'e' || e.key === 'E') {
+                setTool('eraser');
+            } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveImage();
+            }
+        });
+
+        // 初始化
+        window.addEventListener('load', () => {
+            const params = getURLParams();
+            writeURL = params.itemWriteUrl;
+            itemName = params.itemName;
+
+            initCanvas();
+            console.log('[Draw] Initialized');
+        });
+
+        // 窗口大小改变时重新调整画布
+        window.addEventListener('resize', () => {
+            // 保存当前画布内容
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            // 重新初始化画布
+            initCanvas();
+
+            // 恢复画布内容
+            ctx.putImageData(imageData, 0, 0);
+        });
+    </script>
+</body>
+</html>

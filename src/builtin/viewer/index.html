@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Viewer</title>
+    <title>Image Viewer - Puter</title>
     <style>
         * {
             margin: 0;
@@ -45,11 +45,6 @@
             background: #4a4a4a;
         }
 
-        .toolbar button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
         .zoom-controls {
             display: flex;
             align-items: center;
@@ -70,6 +65,7 @@
             justify-content: center;
             overflow: auto;
             position: relative;
+            background: #0a0a0a;
         }
 
         .image-wrapper {
@@ -86,11 +82,23 @@
 
         .loading {
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
+            gap: 20px;
             height: 100%;
             font-size: 18px;
             color: #888;
+        }
+
+        .loading-icon {
+            font-size: 48px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
 
         .error {
@@ -120,80 +128,43 @@
             border-radius: 4px;
             font-size: 12px;
             display: none;
+            z-index: 10;
         }
 
         .info-panel.visible {
             display: block;
         }
-
-        .keyboard-shortcuts {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 15px;
-            border-radius: 4px;
-            font-size: 12px;
-            display: none;
-        }
-
-        .keyboard-shortcuts.visible {
-            display: block;
-        }
-
-        .keyboard-shortcuts h4 {
-            margin-bottom: 10px;
-            color: #888;
-        }
-
-        .keyboard-shortcuts p {
-            margin: 5px 0;
-        }
-
-        .shortcut-key {
-            background: #3a3a3a;
-            padding: 2px 8px;
-            border-radius: 3px;
-            margin-right: 8px;
-            font-family: monospace;
-        }
     </style>
 </head>
 <body>
     <div class="toolbar">
-        <button id="zoomOut" title="Zoom Out (−)">➖</button>
-        <button id="zoomIn" title="Zoom In (+)">➕</button>
-        <button id="zoomFit" title="Fit to Screen (F)">Fit</button>
-        <button id="zoomActual" title="Actual Size (A)">100%</button>
+        <button id="zoomOut" title="Zoom Out">➖</button>
+        <button id="zoomIn" title="Zoom In">➕</button>
+        <button id="zoomFit" title="Fit to Screen">Fit</button>
+        <button id="zoomActual" title="Actual Size">100%</button>
         <div class="zoom-controls">
             <span class="zoom-level" id="zoomLevel">100%</span>
         </div>
-        <button id="rotateLeft" title="Rotate Left (L)">↺</button>
-        <button id="rotateRight" title="Rotate Right (R)">↻</button>
-        <button id="fullscreen" title="Fullscreen (F11)">⛶</button>
+        <button id="rotateLeft" title="Rotate Left">↺</button>
+        <button id="rotateRight" title="Rotate Right">↻</button>
+        <button id="fullscreen" title="Fullscreen">⛶</button>
     </div>
 
     <div class="image-container" id="imageContainer">
         <div class="image-wrapper" id="imageWrapper">
-            <img id="image" alt="Loaded image" />
+            <img id="image" alt="Loaded image" style="display: none;" />
         </div>
-        <div class="loading" id="loading">Loading image...</div>
+        <div class="loading" id="loading">
+            <div class="loading-icon">⚙️</div>
+            <div>Loading image...</div>
+        </div>
         <div class="error" id="error" style="display: none;">
             <div class="error-icon">⚠️</div>
-            <div class="error-message">Failed to load image</div>
+            <div class="error-message" id="errorMessage">Failed to load image</div>
         </div>
     </div>
 
     <div class="info-panel" id="infoPanel"></div>
-
-    <div class="keyboard-shortcuts" id="shortcutsPanel">
-        <h4>Keyboard Shortcuts</h4>
-        <p><span class="shortcut-key">+</span> / <span class="shortcut-key">−</span> Zoom in/out</p>
-        <p><span class="shortcut-key">F</span> Fit to screen</p>
-        <p><span class="shortcut-key">A</span> Actual size</p>
-        <p><span class="shortcut-key">L</span> / <span class="shortcut-key">R</span> Rotate</p>
-        <p><span class="shortcut-key">F11</span> Fullscreen</p>
-    </div>
 
     <script>
         const image = document.getElementById('image');
@@ -201,121 +172,59 @@
         const imageContainer = document.getElementById('imageContainer');
         const loading = document.getElementById('loading');
         const error = document.getElementById('error');
+        const errorMessage = document.getElementById('errorMessage');
         const zoomLevelDisplay = document.getElementById('zoomLevel');
         const infoPanel = document.getElementById('infoPanel');
-        const shortcutsPanel = document.getElementById('shortcutsPanel');
 
         let zoom = 1;
         let rotation = 0;
         let imageURL = null;
 
-        // 获取图片URL和token
-        function getImageParams() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const token = urlParams.get('puter.app_instance_id');
-            const parentInstance = urlParams.get('puter.parent_instance_id');
-
-            // 从父窗口获取文件信息
-            return { token, parentInstance };
+        // 获取URL参数
+        function getURLParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                token: params.get('puter.app_instance_id'),
+                appId: params.get('puter.app.id'),
+                appName: params.get('puter.app.name'),
+                parentInstanceId: params.get('puter.parent_instance_id'),
+                // 文件信息
+                itemUid: params.get('puter.item.uid'),
+                itemPath: params.get('puter.item.path'),
+                itemName: params.get('puter.item.name'),
+                itemReadUrl: params.get('puter.item.read_url'),
+                itemWriteUrl: params.get('puter.item.write_url'),
+                itemSize: params.get('puter.item.size')
+            };
         }
 
-        // 从 Puter SDK 获取图片数据
-        async function loadImage() {
-            try {
-                loading.style.display = 'flex';
-                error.style.display = 'none';
-                image.style.display = 'none';
-
-                // 尝试通过 postMessage 从父窗口获取文件信息
-                window.parent.postMessage({
-                    msg: 'request_file_info',
-                    app_instance_id: getImageParams().token
-                }, '*');
-
-            } catch (err) {
-                showError('Failed to load image: ' + err.message);
-            }
+        // 显示错误
+        function showError(message) {
+            console.error('[Viewer]', message);
+            loading.style.display = 'none';
+            error.style.display = 'flex';
+            errorMessage.textContent = message;
         }
 
-        // 监听来自父窗口的消息
-        window.addEventListener('message', async (event) => {
-            if (event.data.msg === 'file_info' || event.data.msg === 'fileOpenPicked') {
-                const items = event.data.items || [event.data];
-
-                if (items.length > 0) {
-                    const item = items[0];
-
-                    // 构建图片URL
-                    const token = item.token || getImageParams().token;
-                    const uid = item.uid || item.uid;
-
-                    if (!uid) {
-                        showError('No file UID provided');
-                        return;
-                    }
-
-                    // 使用 Puter SDK 获取文件内容
-                    if (window.puter && window.puter.fs) {
-                        try {
-                            const blob = await window.puter.fs.read({ uid: uid });
-                            const url = URL.createObjectURL(blob);
-                            displayImage(url, item);
-
-                            // 显示文件信息
-                            showFileInfo(blob, item);
-                        } catch (err) {
-                            showError('Failed to read file: ' + err.message);
-                        }
-                    } else {
-                        // 备用方案：使用 API 直接读取
-                        const apiOrigin = window.api_origin || 'https://api.puter.com';
-                        const authToken = window.auth_token;
-
-                        if (!authToken) {
-                            showError('Not authenticated');
-                            return;
-                        }
-
-                        const response = await fetch(`${apiOrigin}/read`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${authToken}`
-                            },
-                            body: JSON.stringify({ uid: uid, token: token })
-                        });
-
-                        if (!response.ok) {
-                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                        }
-
-                        const blob = await response.blob();
-                        const url = URL.createObjectURL(blob);
-                        displayImage(url, item);
-
-                        // 显示文件信息
-                        showFileInfo(blob, item);
-                    }
-                }
-            }
-        });
-
+        // 显示图片
         function displayImage(url, item) {
             image.src = url;
             image.style.display = 'block';
             loading.style.display = 'none';
             error.style.display = 'none';
 
-            // 图片加载完成后调整大小
             image.onload = () => {
+                console.log('[Viewer] Image loaded successfully');
                 fitToScreen();
             };
 
             image.onerror = () => {
+                console.error('[Viewer] Image failed to load');
                 showError('Failed to display image');
             };
         }
 
+        // 显示文件信息
         function showFileInfo(blob, item) {
             const size = formatFileSize(blob.size);
             const type = blob.type || 'unknown';
@@ -333,12 +242,6 @@
             const sizes = ['Bytes', 'KB', 'MB', 'GB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-        }
-
-        function showError(message) {
-            loading.style.display = 'none';
-            error.style.display = 'flex';
-            error.querySelector('.error-message').textContent = message;
         }
 
         // 缩放功能
@@ -382,7 +285,6 @@
             updateTransform();
         }
 
-        // 旋转功能
         function rotateLeft() {
             rotation -= 90;
             updateTransform();
@@ -393,7 +295,6 @@
             updateTransform();
         }
 
-        // 全屏功能
         function toggleFullscreen() {
             if (!document.fullscreenElement) {
                 document.documentElement.requestFullscreen();
@@ -434,8 +335,6 @@
             } else if (e.key === 'F11') {
                 e.preventDefault();
                 toggleFullscreen();
-            } else if (e.key === '?') {
-                shortcutsPanel.classList.toggle('visible');
             }
         });
 
@@ -448,7 +347,119 @@
             }
         });
 
+        // 主加载逻辑
+        async function loadImage() {
+            const params = getURLParams();
+            console.log('[Viewer] Loading with params:', params.itemName);
+
+            // 方式1：优先使用 URL 参数中的文件信息
+            if (params.itemUid) {
+                try {
+                    let item = {
+                        uid: params.itemUid,
+                        path: params.itemPath,
+                        name: params.itemName,
+                        size: params.itemSize
+                    };
+
+                    // 优先使用 read_url（最直接，不需要 SDK）
+                    if (params.itemReadUrl) {
+                        console.log('[Viewer] Using read_url');
+                        displayImage(params.itemReadUrl, item);
+
+                        // 获取文件大小用于显示
+                        try {
+                            const blob = await fetch(params.itemReadUrl).then(r => r.blob());
+                            showFileInfo(blob, item);
+                        } catch (e) {
+                            console.warn('[Viewer] Could not fetch file info:', e);
+                        }
+                        return;
+                    }
+
+                    // 如果没有 read_url，尝试使用 SDK
+                    if (typeof window.puter !== 'undefined') {
+                        console.log('[Viewer] Using SDK to read file');
+                        const blob = await window.puter.fs.read({ uid: params.itemUid });
+                        const url = URL.createObjectURL(blob);
+                        displayImage(url, item);
+                        showFileInfo(blob, item);
+                        return;
+                    }
+
+                    // 既没有 read_url 也没有 SDK，尝试直接构造 URL
+                    console.log('[Viewer] Trying direct URL construction');
+                    // 构造读取 URL: /item/{uid}
+                    const directUrl = `/item/${params.itemUid}`;
+                    displayImage(directUrl, item);
+                    return;
+
+                } catch (err) {
+                    console.error('[Viewer] Error reading file:', err);
+                    showError('Failed to read file: ' + err.message);
+                }
+                return;
+            }
+
+            // 方式2：等待 postMessage（备用方案）
+            console.log('[Viewer] No file UID in URL, waiting for postMessage');
+
+            // 检查是否有 Puter SDK
+            if (typeof window.puter === 'undefined') {
+                showError('Puter SDK not loaded. Please open this app from Puter.');
+                return;
+            }
+
+            // 监听来自父窗口的消息
+            const messageHandler = async (event) => {
+                console.log('[Viewer] Received message:', event.data.msg);
+
+                if (event.data.msg === 'file_info' || event.data.msg === 'fileOpenPicked') {
+                    const items = event.data.items || [event.data];
+
+                    if (items.length > 0) {
+                        const item = items[0];
+                        const uid = item.uid;
+                        if (!uid) {
+                            showError('No file UID provided');
+                            return;
+                        }
+
+                        try {
+                            const blob = await window.puter.fs.read({ uid: uid });
+                            const url = URL.createObjectURL(blob);
+                            displayImage(url, item);
+                            showFileInfo(blob, item);
+                        } catch (err) {
+                            console.error('[Viewer] Error reading file:', err);
+                            showError('Failed to read file: ' + err.message);
+                        }
+                    }
+                }
+            };
+
+            window.addEventListener('message', messageHandler);
+
+            // 请求父窗口发送文件信息
+            if (window.parent !== window) {
+                window.parent.postMessage({
+                    msg: 'request_file_info',
+                    app_instance_id: params.token
+                }, '*');
+
+                // 设置超时
+                setTimeout(() => {
+                    if (loading.style.display !== 'none') {
+                        showError('No file received. Please open an image file from Puter.');
+                    }
+                }, 5000);
+            } else {
+                showError('This is a builtin app. Please open it from Puter by double-clicking an image file.');
+            }
+        }
+
         // 初始化
+        console.log('[Viewer] Initializing');
         loadImage();
     </script>
 </body>

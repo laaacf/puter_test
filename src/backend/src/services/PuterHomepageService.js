@@ -212,7 +212,8 @@ export class PuterHomepageService extends BaseService {
             gui_origin: app_origin,
         };
 
-        const asset_dir = env === 'dev'
+        // 如果 use_bundled_gui 为 true，强制使用打包的 GUI
+        const asset_dir = (env === 'dev' && !use_bundled_gui)
             ? '/src' : '/dist';
 
         gui_params.asset_dir = asset_dir;

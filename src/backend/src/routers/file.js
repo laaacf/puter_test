@@ -19,6 +19,7 @@
 'use strict';
 const express = require('express');
 const router = new express.Router();
+const mime = require('mime-types');
 const { subdomain, validate_signature_auth, get_url_from_req, get_descendants, id2path, get_user, sign_file } = require('../helpers');
 const { DB_WRITE } = require('../services/database/consts');
 const { UserActorType } = require('../services/auth/Actor');
@@ -110,8 +111,8 @@ router.get('/file', async (req, res, next) => {
     // record fsentry owner
     res.resource_owner = fsentry[0].user_id;
 
-    // try to deduce content-type
-    const contentType = 'application/octet-stream';
+    // 根据 MIME 类型动态判断（Safari 需要正确的 Content-Type 才能播放音频视频）
+    const contentType = mime.contentType(fsentry[0].name);
 
     // update `accessed`
     db.write('UPDATE fsentries SET accessed = ? WHERE `id` = ?',
@@ -124,6 +125,9 @@ router.get('/file', async (req, res, next) => {
         }),
     });
     const fileSize = fsentry[0].size;
+
+    // 设置 Accept-Ranges 响应头，告诉客户端（特别是 Safari）支持 Range 请求
+    res.setHeader('Accept-Ranges', 'bytes');
 
     //--------------------------------------------------
     // No range

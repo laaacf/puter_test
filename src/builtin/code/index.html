@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Editor - Puter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: #2a2a2a;
+            border-bottom: 1px solid #3a3a3a;
+        }
+
+        .toolbar button {
+            background: #3a3a3a;
+            border: none;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .toolbar button:hover {
+            background: #4a4a4a;
+        }
+
+        .toolbar .save-status {
+            margin-left: auto;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .toolbar .save-status.saved {
+            color: #4caf50;
+        }
+
+        .toolbar .save-status.saving {
+            color: #ff9800;
+        }
+
+        .toolbar .save-status.error {
+            color: #f44336;
+        }
+
+        .editor-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .line-numbers {
+            background: #1e1e1e;
+            color: #858585;
+            padding: 10px 5px;
+            text-align: right;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            user-select: none;
+            overflow: hidden;
+            min-width: 40px;
+        }
+
+        .code-wrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #codeEditor {
+            width: 100%;
+            height: 100%;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border: none;
+            outline: none;
+            padding: 10px;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: none;
+            tab-size: 4;
+            white-space: pre;
+            overflow: auto;
+        }
+
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 10;
+        }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            font-size: 18px;
+            color: #888;
+        }
+
+        .error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 20px;
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button id="saveBtn" title="Save (Ctrl+S)">💾 Save</button>
+        <button id="undoBtn" title="Undo (Ctrl+Z)">↶ Undo</button>
+        <button id="redoBtn" title="Redo (Ctrl+Y)">↷ Redo</button>
+        <span class="save-status" id="saveStatus">Ready</span>
+    </div>
+
+    <div class="editor-container">
+        <div class="line-numbers" id="lineNumbers">1</div>
+        <div class="code-wrapper">
+            <textarea id="codeEditor" spellcheck="false" style="display: none;"></textarea>
+            <div class="loading" id="loading">Loading file...</div>
+            <div class="error" id="error" style="display: none;">
+                <div id="errorMessage">Failed to load file</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-panel" id="infoPanel"></div>
+
+    <script>
+        const codeEditor = document.getElementById('codeEditor');
+        const lineNumbers = document.getElementById('lineNumbers');
+        const saveBtn = document.getElementById('saveBtn');
+        const saveStatus = document.getElementById('saveStatus');
+        const infoPanel = document.getElementById('infoPanel');
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const errorMessage = document.getElementById('errorMessage');
+
+        let fileUID = null;
+        let writeURL = null;
+        let itemName = null;
+        let isModified = false;
+        let autoSaveTimer = null;
+
+        // 获取URL参数
+        function getURLParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                itemUid: params.get('puter.item.uid'),
+                itemPath: params.get('puter.item.path'),
+                itemName: params.get('puter.item.name'),
+                itemReadUrl: params.get('puter.item.read_url'),
+                itemWriteUrl: params.get('puter.item.write_url'),
+                itemSize: params.get('puter.item.size')
+            };
+        }
+
+        // 显示状态
+        function setStatus(text, type = 'normal') {
+            saveStatus.textContent = text;
+            saveStatus.className = 'save-status ' + type;
+        }
+
+        // 显示错误
+        function showError(message) {
+            console.error('[Code]', message);
+            loading.style.display = 'none';
+            error.style.display = 'flex';
+            errorMessage.textContent = message;
+        }
+
+        // 更新行号
+        function updateLineNumbers() {
+            const lines = codeEditor.value.split('\n').length;
+            let numbers = '';
+            for (let i = 1; i <= lines; i++) {
+                numbers += i + '\n';
+            }
+            lineNumbers.textContent = numbers;
+        }
+
+        // 更新信息面板
+        function updateInfo() {
+            const lines = codeEditor.value.split('\n').length;
+            const chars = codeEditor.value.length;
+            const selection = codeEditor.selectionStart !== codeEditor.selectionEnd
+                ? `Selected: ${Math.abs(codeEditor.selectionEnd - codeEditor.selectionStart)} chars`
+                : '';
+
+            const lang = getLanguage(itemName || '');
+
+            infoPanel.innerHTML = `
+                ${itemName || 'Untitled'} • ${lang}<br>
+                Lines: ${lines} • Chars: ${chars.toLocaleString()}<br>
+                ${selection}
+            `;
+        }
+
+        // 获取语言（根据文件扩展名）
+        function getLanguage(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const langMap = {
+                'js': 'JavaScript',
+                'ts': 'TypeScript',
+                'py': 'Python',
+                'java': 'Java',
+                'c': 'C',
+                'cpp': 'C++',
+                'h': 'C/C++',
+                'cs': 'C#',
+                'php': 'PHP',
+                'rb': 'Ruby',
+                'go': 'Go',
+                'rs': 'Rust',
+                'kt': 'Kotlin',
+                'swift': 'Swift',
+                'html': 'HTML',
+                'css': 'CSS',
+                'scss': 'SCSS',
+                'sass': 'Sass',
+                'less': 'Less',
+                'xml': 'XML',
+                'json': 'JSON',
+                'yaml': 'YAML',
+                'yml': 'YAML',
+                'md': 'Markdown',
+                'sql': 'SQL',
+                'sh': 'Shell',
+                'bash': 'Bash',
+                'zsh': 'Zsh',
+                'fish': 'Fish'
+            };
+            return langMap[ext] || 'Plain Text';
+        }
+
+        // 加载文件
+        async function loadFile() {
+            const params = getURLParams();
+
+            if (!params.itemUid) {
+                showError('No file specified');
+                return;
+            }
+
+            fileUID = params.itemUid;
+            writeURL = params.itemWriteUrl;
+            itemName = params.itemName;
+
+            try {
+                let content;
+
+                // 优先使用 read_url
+                if (params.itemReadUrl) {
+                    console.log('[Code] Loading from read_url:', params.itemReadUrl);
+                    const response = await fetch(params.itemReadUrl);
+                    content = await response.text();
+                } else {
+                    showError('No read URL provided');
+                    return;
+                }
+
+                // 显示编辑器
+                loading.style.display = 'none';
+                error.style.display = 'none';
+                codeEditor.style.display = 'block';
+                codeEditor.value = content;
+
+                updateLineNumbers();
+                updateInfo();
+                setStatus('Loaded', 'saved');
+
+            } catch (err) {
+                console.error('[Code] Error loading file:', err);
+                showError('Failed to load file: ' + err.message);
+            }
+        }
+
+        // 保存文件
+        async function saveFile() {
+            if (!writeURL) {
+                setStatus('No write URL', 'error');
+                return;
+            }
+
+            setStatus('Saving...', 'saving');
+            saveBtn.disabled = true;
+
+            try {
+                const content = codeEditor.value;
+
+                const response = await fetch(writeURL, {
+                    method: 'POST',
+                    body: content,
+                    headers: {
+                        'Content-Type': 'text/plain'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Save failed: ' + response.statusText);
+                }
+
+                isModified = false;
+                setStatus('Saved', 'saved');
+
+            } catch (err) {
+                console.error('[Code] Error saving file:', err);
+                setStatus('Save failed: ' + err.message, 'error');
+            } finally {
+                saveBtn.disabled = false;
+            }
+        }
+
+        // 自动保存
+        function scheduleAutoSave() {
+            if (autoSaveTimer) {
+                clearTimeout(autoSaveTimer);
+            }
+
+            isModified = true;
+            setStatus('Unsaved');
+
+            autoSaveTimer = setTimeout(() => {
+                if (isModified) {
+                    saveFile();
+                }
+            }, 2000);
+        }
+
+        // 同步滚动
+        function syncScroll() {
+            lineNumbers.scrollTop = codeEditor.scrollTop;
+        }
+
+        // 事件监听
+        saveBtn.addEventListener('click', () => saveFile());
+
+        document.getElementById('undoBtn').addEventListener('click', () => {
+            document.execCommand('undo');
+            codeEditor.focus();
+        });
+
+        document.getElementById('redoBtn').addEventListener('click', () => {
+            document.execCommand('redo');
+            codeEditor.focus();
+        });
+
+        codeEditor.addEventListener('input', () => {
+            scheduleAutoSave();
+            updateLineNumbers();
+            updateInfo();
+        });
+
+        codeEditor.addEventListener('scroll', syncScroll);
+        codeEditor.addEventListener('keyup', updateInfo);
+        codeEditor.addEventListener('click', updateInfo);
+
+        // 键盘快捷键
+        codeEditor.addEventListener('keydown', (e) => {
+            // Ctrl+S: 保存
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveFile();
+            }
+            // Tab: 插入空格
+            else if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = codeEditor.selectionStart;
+                const end = codeEditor.selectionEnd;
+                codeEditor.value = codeEditor.value.substring(0, start) + '    ' + codeEditor.value.substring(end);
+                codeEditor.selectionStart = codeEditor.selectionEnd = start + 4;
+                scheduleAutoSave();
+            }
+            // Ctrl+/: 注释
+            else if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+                e.preventDefault();
+                const start = codeEditor.selectionStart;
+                const end = codeEditor.selectionEnd;
+                const lines = codeEditor.value.split('\n');
+                let currentLine = codeEditor.value.substring(0, start).split('\n').length - 1;
+                lines[currentLine] = lines[currentLine].trim().startsWith('//')
+                    ? lines[currentLine].replace(/^(\s*)\/\/\s?/, '$1')
+                    : lines[currentLine].replace(/^(\s*)/, '$1// ');
+                codeEditor.value = lines.join('\n');
+                scheduleAutoSave();
+            }
+        });
+
+        // 初始化
+        console.log('[Code] Initializing...');
+        loadFile();
+    </script>
+</body>
+</html>
