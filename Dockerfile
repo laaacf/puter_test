@@ -73,6 +73,7 @@ WORKDIR /opt/puter/app
 # Copy built artifacts and necessary files from the build stage
 COPY --from=build /app/src/gui/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/src/builtin ./src/builtin
 COPY . .
 
 # Set permissions
