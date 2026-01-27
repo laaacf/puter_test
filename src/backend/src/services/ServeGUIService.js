@@ -48,7 +48,8 @@ class ServeGUIService extends BaseService {
         app.use(require('../routers/_default'));
 
         // Static files - serve dist directory for bundle.min.js and bundle.min.css
-        app.use(express.static(_path.join(__dirname, '../../dist')));
+        // Path: src/backend/src/services/ -> ../../../dist -> app/dist
+        app.use(express.static(_path.join(__dirname, '../../../dist')));
     }
 }
 
