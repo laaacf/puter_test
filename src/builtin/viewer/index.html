@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: #2a2a2a;
+            border-bottom: 1px solid #3a3a3a;
+        }
+
+        .toolbar button {
+            background: #3a3a3a;
+            border: none;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .toolbar button:hover {
+            background: #4a4a4a;
+        }
+
+        .toolbar button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto;
+        }
+
+        .zoom-level {
+            min-width: 60px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .image-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: auto;
+            position: relative;
+        }
+
+        .image-wrapper {
+            transition: transform 0.3s ease;
+            transform-origin: center center;
+        }
+
+        #image {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+            object-fit: contain;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            font-size: 18px;
+            color: #888;
+        }
+
+        .error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 20px;
+            color: #ff6b6b;
+        }
+
+        .error-icon {
+            font-size: 64px;
+        }
+
+        .error-message {
+            font-size: 18px;
+        }
+
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: none;
+        }
+
+        .info-panel.visible {
+            display: block;
+        }
+
+        .keyboard-shortcuts {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: none;
+        }
+
+        .keyboard-shortcuts.visible {
+            display: block;
+        }
+
+        .keyboard-shortcuts h4 {
+            margin-bottom: 10px;
+            color: #888;
+        }
+
+        .keyboard-shortcuts p {
+            margin: 5px 0;
+        }
+
+        .shortcut-key {
+            background: #3a3a3a;
+            padding: 2px 8px;
+            border-radius: 3px;
+            margin-right: 8px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button id="zoomOut" title="Zoom Out (−)">➖</button>
+        <button id="zoomIn" title="Zoom In (+)">➕</button>
+        <button id="zoomFit" title="Fit to Screen (F)">Fit</button>
+        <button id="zoomActual" title="Actual Size (A)">100%</button>
+        <div class="zoom-controls">
+            <span class="zoom-level" id="zoomLevel">100%</span>
+        </div>
+        <button id="rotateLeft" title="Rotate Left (L)">↺</button>
+        <button id="rotateRight" title="Rotate Right (R)">↻</button>
+        <button id="fullscreen" title="Fullscreen (F11)">⛶</button>
+    </div>
+
+    <div class="image-container" id="imageContainer">
+        <div class="image-wrapper" id="imageWrapper">
+            <img id="image" alt="Loaded image" />
+        </div>
+        <div class="loading" id="loading">Loading image...</div>
+        <div class="error" id="error" style="display: none;">
+            <div class="error-icon">⚠️</div>
+            <div class="error-message">Failed to load image</div>
+        </div>
+    </div>
+
+    <div class="info-panel" id="infoPanel"></div>
+
+    <div class="keyboard-shortcuts" id="shortcutsPanel">
+        <h4>Keyboard Shortcuts</h4>
+        <p><span class="shortcut-key">+</span> / <span class="shortcut-key">−</span> Zoom in/out</p>
+        <p><span class="shortcut-key">F</span> Fit to screen</p>
+        <p><span class="shortcut-key">A</span> Actual size</p>
+        <p><span class="shortcut-key">L</span> / <span class="shortcut-key">R</span> Rotate</p>
+        <p><span class="shortcut-key">F11</span> Fullscreen</p>
+    </div>
+
+    <script>
+        const image = document.getElementById('image');
+        const imageWrapper = document.getElementById('imageWrapper');
+        const imageContainer = document.getElementById('imageContainer');
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const zoomLevelDisplay = document.getElementById('zoomLevel');
+        const infoPanel = document.getElementById('infoPanel');
+        const shortcutsPanel = document.getElementById('shortcutsPanel');
+
+        let zoom = 1;
+        let rotation = 0;
+        let imageURL = null;
+
+        // 获取图片URL和token
+        function getImageParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('puter.app_instance_id');
+            const parentInstance = urlParams.get('puter.parent_instance_id');
+
+            // 从父窗口获取文件信息
+            return { token, parentInstance };
+        }
+
+        // 从 Puter SDK 获取图片数据
+        async function loadImage() {
+            try {
+                loading.style.display = 'flex';
+                error.style.display = 'none';
+                image.style.display = 'none';
+
+                // 尝试通过 postMessage 从父窗口获取文件信息
+                window.parent.postMessage({
+                    msg: 'request_file_info',
+                    app_instance_id: getImageParams().token
+                }, '*');
+
+            } catch (err) {
+                showError('Failed to load image: ' + err.message);
+            }
+        }
+
+        // 监听来自父窗口的消息
+        window.addEventListener('message', async (event) => {
+            if (event.data.msg === 'file_info' || event.data.msg === 'fileOpenPicked') {
+                const items = event.data.items || [event.data];
+
+                if (items.length > 0) {
+                    const item = items[0];
+
+                    // 构建图片URL
+                    const token = item.token || getImageParams().token;
+                    const uid = item.uid || item.uid;
+
+                    if (!uid) {
+                        showError('No file UID provided');
+                        return;
+                    }
+
+                    // 使用 Puter SDK 获取文件内容
+                    if (window.puter && window.puter.fs) {
+                        try {
+                            const blob = await window.puter.fs.read({ uid: uid });
+                            const url = URL.createObjectURL(blob);
+                            displayImage(url, item);
+
+                            // 显示文件信息
+                            showFileInfo(blob, item);
+                        } catch (err) {
+                            showError('Failed to read file: ' + err.message);
+                        }
+                    } else {
+                        // 备用方案：使用 API 直接读取
+                        const apiOrigin = window.api_origin || 'https://api.puter.com';
+                        const authToken = window.auth_token;
+
+                        if (!authToken) {
+                            showError('Not authenticated');
+                            return;
+                        }
+
+                        const response = await fetch(`${apiOrigin}/read`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${authToken}`
+                            },
+                            body: JSON.stringify({ uid: uid, token: token })
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        displayImage(url, item);
+
+                        // 显示文件信息
+                        showFileInfo(blob, item);
+                    }
+                }
+            }
+        });
+
+        function displayImage(url, item) {
+            image.src = url;
+            image.style.display = 'block';
+            loading.style.display = 'none';
+            error.style.display = 'none';
+
+            // 图片加载完成后调整大小
+            image.onload = () => {
+                fitToScreen();
+            };
+
+            image.onerror = () => {
+                showError('Failed to display image');
+            };
+        }
+
+        function showFileInfo(blob, item) {
+            const size = formatFileSize(blob.size);
+            const type = blob.type || 'unknown';
+
+            infoPanel.innerHTML = `
+                <strong>${item.name || 'image'}</strong><br>
+                ${size} • ${type}
+            `;
+            infoPanel.classList.add('visible');
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function showError(message) {
+            loading.style.display = 'none';
+            error.style.display = 'flex';
+            error.querySelector('.error-message').textContent = message;
+        }
+
+        // 缩放功能
+        function setZoom(newZoom) {
+            zoom = Math.max(0.1, Math.min(10, newZoom));
+            updateTransform();
+        }
+
+        function updateTransform() {
+            imageWrapper.style.transform = `scale(${zoom}) rotate(${rotation}deg)`;
+            zoomLevelDisplay.textContent = Math.round(zoom * 100) + '%';
+        }
+
+        function zoomIn() {
+            setZoom(zoom * 1.25);
+        }
+
+        function zoomOut() {
+            setZoom(zoom / 1.25);
+        }
+
+        function fitToScreen() {
+            zoom = 1;
+            rotation = 0;
+            updateTransform();
+        }
+
+        function actualSize() {
+            const containerWidth = imageContainer.clientWidth;
+            const containerHeight = imageContainer.clientHeight;
+
+            if (image.naturalWidth && image.naturalHeight) {
+                const scaleX = containerWidth / image.naturalWidth;
+                const scaleY = containerHeight / image.naturalHeight;
+                zoom = Math.min(scaleX, scaleY, 1);
+            } else {
+                zoom = 1;
+            }
+
+            rotation = 0;
+            updateTransform();
+        }
+
+        // 旋转功能
+        function rotateLeft() {
+            rotation -= 90;
+            updateTransform();
+        }
+
+        function rotateRight() {
+            rotation += 90;
+            updateTransform();
+        }
+
+        // 全屏功能
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // 事件监听
+        document.getElementById('zoomIn').addEventListener('click', zoomIn);
+        document.getElementById('zoomOut').addEventListener('click', zoomOut);
+        document.getElementById('zoomFit').addEventListener('click', fitToScreen);
+        document.getElementById('zoomActual').addEventListener('click', actualSize);
+        document.getElementById('rotateLeft').addEventListener('click', rotateLeft);
+        document.getElementById('rotateRight').addEventListener('click', rotateRight);
+        document.getElementById('fullscreen').addEventListener('click', toggleFullscreen);
+
+        // 键盘快捷键
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '+' || e.key === '=') {
+                e.preventDefault();
+                zoomIn();
+            } else if (e.key === '-' || e.key === '_') {
+                e.preventDefault();
+                zoomOut();
+            } else if (e.key === 'f' || e.key === 'F') {
+                e.preventDefault();
+                fitToScreen();
+            } else if (e.key === 'a' || e.key === 'A') {
+                e.preventDefault();
+                actualSize();
+            } else if (e.key === 'l' || e.key === 'L') {
+                e.preventDefault();
+                rotateLeft();
+            } else if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                rotateRight();
+            } else if (e.key === 'F11') {
+                e.preventDefault();
+                toggleFullscreen();
+            } else if (e.key === '?') {
+                shortcutsPanel.classList.toggle('visible');
+            }
+        });
+
+        // 鼠标滚轮缩放
+        imageContainer.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                setZoom(zoom * delta);
+            }
+        });
+
+        // 初始化
+        loadImage();
+    </script>
+</body>
+</html>
