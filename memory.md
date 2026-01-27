@@ -1,6 +1,95 @@
 # Puter 项目记忆
 
-## 2026-01-27 - Docker 部署 CSS 加载问题修复
+## 2026-01-27 - Docker 部署 CSS 加载问题彻底解决
+
+### 背景
+Docker 部署后，即使设置了 `window.gui_env = 'prod'`，页面布局仍然混乱、图标大小不一。经过深入排查发现多个关联问题。
+
+### 问题根源分析
+
+**问题1：CSS 通过 JavaScript 动态加载，存在时序问题**
+- 在打包模式下，CSS 通过 `index.js` 中的 `window.loadCSS('/dist/bundle.min.css')` 动态加载
+- HTML 本身不包含 CSS `<link>` 标签（第342-345行的逻辑：只有 `!bundled` 时才添加）
+- JavaScript 动态加载有时序问题，CSS 可能晚于页面渲染加载
+
+**问题2：prod 模式加载外部 SDK 导致冲突**
+- `index.js` 第77行在 prod 模式下会加载 `https://js.puter.com/v2/`（官方SDK）
+- 这与本地打包的 `bundle.min.js` 产生冲突
+- 外部SDK覆盖了本地代码的行为
+
+**问题3：数据库不一致导致认证失败**
+- Docker 容器和 npm start 使用不同的数据库文件
+- 用户在 npm start 环境创建的账户在 Docker 中不存在
+
+### 最终解决方案
+
+**修复1：在 HTML 中直接添加 CSS link 标签**
+```javascript
+// PuterHomepageService.js 第369-372行
+${use_bundled_gui
+    ? '<link rel="stylesheet" href="/dist/bundle.min.css">'
+    : ''
+}
+```
+当 `use_bundled_gui = true` 时，HTML 直接包含 CSS 引用，确保页面加载时 CSS 立即生效。
+
+**修复2：移除 prod 模式的外部 SDK 加载**
+```javascript
+// index.js 第76-81行
+else if ( window.gui_env === 'prod' ) {
+    // 不加载外部SDK，使用已打包的 bundle.min.js（已在HTML中加载）
+    // await window.loadScript('https://js.puter.com/v2/');
+    await window.loadCSS('/dist/bundle.min.css');
+}
+```
+注释掉外部 SDK 加载，只使用本地打包资源。
+
+**修复3：Docker 挂载 npm start 的数据库**
+```yaml
+# docker-compose.yml
+volumes:
+  - /home/laaa/docker/puter-unlocked/volatile/runtime/puter-database.sqlite:/var/puter/puter-database.sqlite
+```
+确保 Docker 容器和 npm start 使用同一个数据库，账户和session共享。
+
+### 修复效果
+- ✅ HTML 直接包含 CSS link 标签
+- ✅ CSS 在页面加载时立即生效
+- ✅ 无时序问题，页面布局正常
+- ✅ 图标大小统一
+- ✅ 不再依赖外部资源
+- ✅ Docker 和 npm start 数据一致
+
+### 部署步骤
+```bash
+# 1. 停止容器
+cd ~/docker-puter && docker compose down
+
+# 2. 重新构建（包含最新代码）
+docker compose build
+
+# 3. 启动容器
+docker compose up -d
+
+# 4. 清除浏览器缓存（重要！）
+# Ctrl+Shift+R 或使用隐私模式
+```
+
+### Git 提交记录
+- `ac0538d0` fix: 在HTML中直接添加CSS link标签，确保打包模式下CSS正确加载
+- `27112bb1` fix: 设置 globalThis.PUTER_API_ORIGIN 确保使用正确的API origin
+- `4c941d9b` fix: 默认使用打包 GUI，确保 window.gui_env 被设置
+
+### 关键经验
+1. **CSS 应该在 HTML 中静态引用**：避免 JavaScript 动态加载的时序问题
+2. **打包模式不应依赖外部资源**：所有资源应该包含在本地 bundle 中
+3. **Docker 部署需要数据一致性**：确保测试环境和生产环境使用相同数据
+4. **浏览器缓存很顽固**：修改前端资源后必须强制刷新或清除缓存
+5. **多个小问题会叠加**：CSS 加载、外部SDK、数据库不一致三个问题叠加导致排查困难
+
+---
+
+## 2026-01-27 - Docker 部署 CSS 加载问题修复（第一次尝试）
 
 ### 背景
 Docker 部署完成后，访问、登录、反向代理都正常，但页面布局混乱、图标大小不一。CSS 文件存在但未被加载。
