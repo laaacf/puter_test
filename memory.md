@@ -1,5 +1,56 @@
 # Puter 项目记忆
 
+## 2026-01-27 - Docker 部署成功完成
+
+### 背景
+为了便于部署和管理，在 Debian 服务器（192.168.50.123）上使用 Docker 部署 Puter 应用。
+
+### 部署方式
+使用本地构建的 Docker 镜像，基于 `/home/laaa/docker/puter-unlocked` 源代码。
+
+### 部署结果
+- ✅ Docker 容器正常运行（状态：healthy）
+- ✅ 服务地址：http://192.168.50.123:4100
+- ✅ 配置目录：~/docker-puter/config
+- ✅ 数据目录：~/docker-puter/data
+- ✅ 容器名称：puter
+
+### 管理命令
+```bash
+# 使用管理脚本
+cd ~/docker-puter
+./manage.sh logs     # 查看实时日志
+./manage.sh restart  # 重启服务
+./manage.sh stop     # 停止服务
+./manage.sh start    # 启动服务
+./manage.sh status   # 查看状态
+
+# 或直接使用 docker compose
+cd ~/docker-puter
+docker compose logs -f      # 查看日志
+docker compose restart      # 重启
+docker compose down         # 停止
+docker compose up -d        # 启动
+docker compose ps           # 状态
+```
+
+### 配置文件位置
+- Docker Compose: `~/docker-puter/docker-compose.yml`
+- Puter 配置: `~/docker-puter/config/config.json`
+- 数据持久化: `~/docker-puter/data/`
+
+### Git 提交记录
+- `b954b1a3` fix: 更新 Docker 配置，添加必需的密钥和 nginx_mode
+- `684ab854` docs: 添加部署脚本和前端构建问题记录
+
+### 关键经验
+1. **Docker 环境需要预先检查**：确保 Docker 和 Docker Compose 已安装
+2. **配置文件需要完整密钥**：缺少认证密钥会导致登录失败
+3. **数据持久化很重要**：通过 volume 映射保存配置和数据
+4. **健康检查配置**：容器配置了健康检查，自动监控服务状态
+
+---
+
 ## 2026-01-27 - 前端构建缺失导致页面布局混乱
 
 ### 背景
