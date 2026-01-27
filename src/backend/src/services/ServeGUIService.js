@@ -41,15 +41,16 @@ class ServeGUIService extends BaseService {
         // is this a puter.site domain?
         require('../routers/hosting/puter-site')(app);
 
+        // Static files - serve dist directory for bundle.min.js and bundle.min.css
+        // IMPORTANT: Must be before _default router, otherwise /dist/* will be caught by router.all('*')
+        // Path: src/backend/src/services/ -> ../../../dist -> app/dist
+        app.use(express.static(_path.join(__dirname, '../../../dist')));
+
         // Builtin apps route (must be before _default)
         app.use('/builtin', require('../routers/builtin'));
 
         // Router for all other cases
         app.use(require('../routers/_default'));
-
-        // Static files - serve dist directory for bundle.min.js and bundle.min.css
-        // Path: src/backend/src/services/ -> ../../../dist -> app/dist
-        app.use(express.static(_path.join(__dirname, '../../../dist')));
     }
 }
 
