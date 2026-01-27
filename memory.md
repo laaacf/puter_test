@@ -1,5 +1,54 @@
 # Puter 项目记忆
 
+## 2026-01-27 - Docker 部署 CSS 加载问题修复
+
+### 背景
+Docker 部署完成后，访问、登录、反向代理都正常，但页面布局混乱、图标大小不一。CSS 文件存在但未被加载。
+
+### 问题根源
+1. **window.gui_env 未设置**：HTML 中缺少 `window.gui_env` 变量
+2. **use_bundled_gui 默认为 false**：`PuterHomepageService.js` 从配置读取 `use_bundled_gui`，但配置文件中没有此字段
+3. **导致走 dev 分支**：`window.gui_env` 为 undefined 时，index.js 走 dev 分支，不加载 CSS
+
+**具体表现：**
+- 功能正常 ✅（登录、API 调用）
+- 页面能显示，但布局混乱 ❌
+- CSS 文件存在但未加载 ❌
+
+### 解决方案
+修改 `PuterHomepageService.js` 第 140 行：
+```javascript
+// 修改前
+use_bundled_gui: config.use_bundled_gui,
+
+// 修改后
+use_bundled_gui: config.use_bundled_gui ?? true,
+```
+
+使用空值合并运算符（`??`），当配置中未定义时默认为 `true`。
+
+### 修复效果
+- ✅ HTML 中包含 `<script>window.gui_env = 'prod';</script>`
+- ✅ index.js 走 prod 分支，加载 CSS
+- ✅ 页面布局恢复正常
+- ✅ 图标大小正常
+
+### 部署步骤
+1. 更新代码：`git pull origin main`
+2. 停止容器：`docker compose down`
+3. 重新构建：`docker compose build`
+4. 启动容器：`docker compose up -d`
+
+### Git 提交记录
+- `4c941d9b` fix: 默认使用打包 GUI，确保 window.gui_env 被设置
+
+### 关键经验
+1. **配置默认值很重要**：使用 `?? true` 确保合理的默认行为
+2. **生产环境应该用打包 GUI**：`use_bundled_gui` 应该默认为 true
+3. **Docker 部署需要完整测试**：不能只看服务启动，还要检查前端功能
+
+---
+
 ## 2026-01-27 - Docker 部署成功完成
 
 ### 背景
