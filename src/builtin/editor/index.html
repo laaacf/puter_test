@@ -226,7 +226,7 @@
                     console.log('[Editor] Loading from API, uid:', params.itemUid);
                     const response = await fetch(`/api/read?uid=${encodeURIComponent(params.itemUid)}`, {
                         headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('puter_auth_token') || ''}`
+                            'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
                         }
                     });
 
@@ -278,7 +278,7 @@
                 const response = await fetch('/api/write', {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('puter_auth_token') || ''}`
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
                     },
                     body: formData
                 });

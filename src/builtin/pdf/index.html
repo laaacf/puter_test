@@ -293,7 +293,7 @@
                 // 浏览器会自动继承当前页面的协议（HTTPS）
                 const response = await fetch(`/api/read?uid=${encodeURIComponent(params.itemUid)}`, {
                     headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('puter_auth_token') || ''}`
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
                     }
                 });
 
