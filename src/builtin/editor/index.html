@@ -231,10 +231,9 @@
                         throw new Error('Puter SDK not available');
                     }
 
-                    // 使用正确的参数名：file (接受 UID)
-                    const fileData = await puter.fs.read({
-                        file: params.itemUid,
-                    });
+                    // 直接传递 UID 字符串
+                    const fileData = await puter.fs.read(params.itemUid);
+
                     // 将 ArrayBuffer 转换为字符串
                     const decoder = new TextDecoder();
                     content = decoder.decode(fileData);
@@ -278,12 +277,9 @@
                     throw new Error('Puter SDK not available');
                 }
 
-                // 使用 puter.js SDK 保存文件，避免 Mixed Content 问题
-                // 使用正确的参数名：file (接受 UID) 和 content
-                await puter.fs.write({
-                    file: fileUID,
-                    content: content,
-                });
+                // 使用 puter.js SDK 保存文件
+                // 直接传递 UID 字符串和内容
+                await puter.fs.write(fileUID, content);
 
                 isModified = false;
                 setStatus('Saved', 'saved');

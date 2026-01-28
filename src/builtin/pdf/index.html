@@ -297,10 +297,8 @@
                 }
 
                 // 使用 puter.js SDK 读取文件，避免 Mixed Content 问题
-                // 使用正确的参数名：file (接受 UID)
-                const fileData = await puter.fs.read({
-                    file: params.itemUid,
-                });
+                // 直接传递 UID 字符串
+                const fileData = await puter.fs.read(params.itemUid);
 
                 console.log('[PDF] File data received, size:', fileData.byteLength);
 
