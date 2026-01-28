@@ -53,6 +53,9 @@ RUN npm cache clean --force && \
 # 设置 API 环境变量，确保使用相对路径而不是硬编码的 api.puter.com
 ARG PUTER_API_ORIGIN=""
 ENV PUTER_API_ORIGIN=${PUTER_API_ORIGIN}
+# Build puter.js SDK first
+RUN cd src/puter-js && npm run build && cd -
+# Then build GUI
 RUN cd src/gui && npm run build && cd -
 
 # Production stage
@@ -76,7 +79,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/src/builtin ./src/builtin
 # Copy puter.js SDK for prod mode
 RUN mkdir -p ./sdk
-COPY --from=build /app/src/puter-js/dist/puter.dev.js ./sdk/puter.dev.js
+COPY --from=build /app/src/puter-js/dist/puter.js ./sdk/puter.dev.js
 COPY . .
 
 # Set permissions
