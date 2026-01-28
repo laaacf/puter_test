@@ -221,13 +221,21 @@ const launch_app = async (options) => {
         //-----------------------------------
         let iframe_url;
 
-        // This can be any trusted URL that won't be used for other apps
-        const BUILTIN_PREFIX = 'https://builtins.namespaces.puter.com/';
+        // List of builtin apps that MUST use local /builtin/{name} path
+        // This avoids CORS issues and ensures proper file access
+        const BUILTIN_APPS = ['viewer', 'editor', 'pdf', 'player', 'draw', 'code'];
 
-        if ( ! app_info.index_url ) {
+        // Check if this is a builtin app
+        if ( BUILTIN_APPS.includes(options.name) ) {
+            // Force use local /builtin/{name} path
+            iframe_url = new URL(`${window.gui_origin}/builtin/${options.name}`);
+            console.log('[launch_app] Using builtin path:', iframe_url.href);
+        }
+        // This can be any trusted URL that won't be used for other apps
+        else if ( ! app_info.index_url ) {
             iframe_url = new URL(`https://${options.name}.${ window.app_domain }/index.html`);
-        } else if ( app_info.index_url.startsWith(BUILTIN_PREFIX) ) {
-            const name = app_info.index_url.slice(BUILTIN_PREFIX.length);
+        } else if ( app_info.index_url.startsWith('https://builtins.namespaces.puter.com/') ) {
+            const name = app_info.index_url.slice('https://builtins.namespaces.puter.com/'.length);
             iframe_url = new URL(`${window.gui_origin}/builtin/${name}`);
         } else {
             iframe_url = new URL(app_info.index_url);
