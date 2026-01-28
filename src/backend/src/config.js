@@ -30,6 +30,12 @@ config.servers = [];
 // 这对于 Docker 部署和本地开发很重要，避免 CORS 问题
 config.experimental_no_subdomain = true;
 
+// 允许所有 Host header，这样可以：
+// 1. 通过 IP 地址直接访问（如 http://192.168.50.123:4100）
+// 2. 通过任意反向代理域名访问
+// 3. 简化本地开发和测试
+config.allow_all_host_values = true;
+
 config.disable_user_signup = false;
 config.default_user_group = '78b1b1dd-c959-44d2-b02c-8735671f9997';
 
