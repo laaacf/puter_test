@@ -279,7 +279,7 @@
         async function loadPDF() {
             const params = getURLParams();
 
-            if (!params.itemReadUrl) {
+            if (!params.itemUid) {
                 showError('No PDF file specified');
                 return;
             }
@@ -287,10 +287,25 @@
             fileName = params.itemName;
 
             try {
-                console.log('[PDF] Loading from:', params.itemReadUrl);
+                console.log('[PDF] Loading from API, uid:', params.itemUid);
 
-                // 直接使用 read_url（需要反向代理转发 /file 路径）
-                const loadingTask = pdfjsLib.getDocument(params.itemReadUrl);
+                // 使用相对路径调用后端 API，避免 Mixed Content 问题
+                // 浏览器会自动继承当前页面的协议（HTTPS）
+                const response = await fetch(`/api/read?uid=${encodeURIComponent(params.itemUid)}`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('puter_auth_token') || ''}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                // 获取 PDF 数据作为 ArrayBuffer
+                const arrayBuffer = await response.arrayBuffer();
+
+                // 使用 PDF.js 加载
+                const loadingTask = pdfjsLib.getDocument(arrayBuffer);
                 pdfDoc = await loadingTask.promise;
 
                 console.log('[PDF] Loaded, pages:', pdfDoc.numPages);

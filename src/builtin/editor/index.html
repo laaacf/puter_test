@@ -220,13 +220,23 @@
             try {
                 let content;
 
-                // 直接使用 read_url（需要反向代理转发 /file 路径）
-                if (params.itemReadUrl) {
-                    console.log('[Editor] Loading from read_url:', params.itemReadUrl);
-                    const response = await fetch(params.itemReadUrl);
+                // 使用相对路径调用后端 API，避免 Mixed Content 问题
+                // 浏览器会自动继承当前页面的协议（HTTPS）
+                if (params.itemUid) {
+                    console.log('[Editor] Loading from API, uid:', params.itemUid);
+                    const response = await fetch(`/api/read?uid=${encodeURIComponent(params.itemUid)}`, {
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('puter_auth_token') || ''}`
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
                     content = await response.text();
                 } else {
-                    showError('No read URL provided');
+                    showError('No file UID provided');
                     return;
                 }
 
@@ -258,16 +268,24 @@
             try {
                 const content = editor.value;
 
-                // 从父窗口获取 puter 对象
-                const puter = window.parent.puter || window.top.puter;
+                // 使用相对路径调用后端 API，避免 Mixed Content 问题
+                // 使用 FormData 上传文件内容
+                const formData = new FormData();
+                const blob = new Blob([content], { type: 'text/plain' });
+                formData.append('file', blob, itemName || 'Untitled.txt');
+                formData.append('path', fileUID); // 使用 UID 作为路径
 
-                if (!puter) {
-                    throw new Error('Puter SDK not available');
+                const response = await fetch('/api/write', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('puter_auth_token') || ''}`
+                    },
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
-
-                // 使用 puter.js SDK 保存文件
-                // 直接传递 UID 字符串和内容
-                await puter.fs.write(fileUID, content);
 
                 isModified = false;
                 setStatus('Saved', 'saved');

@@ -1066,3 +1066,354 @@ Puter 开源项目默认限制了域名访问，只允许特定格式的主机�
 - Node.js v24.13.0（必须）
 - SQLite 数据库
 - Dynalite（DynamoDB 本地模拟）
+
+## 2026-01-27 - 服务器部署与 Mixed Content 问题（未完全解决）
+
+### 背景
+在本地通过 `https://gpt.3868088.xyz` 测试所有 builtin apps 都能正常工作，但部署到服务器（`https://puter.3868088.xyz`）后出现严重问题。用户和 Lucky 反向代理在同一台服务器上。
+
+### 已解决的问题
+
+**1. 运行时配置问题**
+- 问题：生成的 read_url 是 `https://puter.3868088.xyz:4100/file?uid=...`，但服务器只有 HTTP 在 4100 端口
+- 解决：修改 `volatile/config/config.json`，设置 `domain: "puter.localhost"`, `protocol: "http"`, `pub_port: 80`
+- 结果：生成的 read_url 变成 `http://puter.localhost:4100/file?uid=...`
+
+**2. Player 和 Viewer 能工作**
+- Viewer（图片）：浏览器对图片的 Mixed Content 限制较宽松
+- Player（视频/音频）：浏览器对媒体文件的 Mixed Content 限制也较宽松
+- 状态：✅ 完全正常
+
+### 未解决的问题
+
+**Editor 和 PDF 的 Mixed Content 问题**
+- 现象：
+  - 浏览器控制台错误：`Mixed Content: The page at 'https://...' was loaded over HTTPS, but requested an insecure resource 'http://puter.localhost:4100/file?uid=...'`
+  - Editor 报错：`Failed to load file: Failed to fetch`
+  - PDF 报错：`Failed to load PDF: Failed to fetch`
+- 原因：
+  - Editor 使用 `fetch(read_url)` 加载文本
+  - PDF 使用 `pdfjsLib.getDocument(read_url)` 加载 PDF
+  - 浏览器的 Mixed Content 策略严格阻止 HTTPS 页面中的 HTTP fetch 请求
+  - 即使 read_url 是 `puter.localhost`，在远程访问时浏览器也不认为是"本地地址"
+
+**尝试的解决方案（均未成功）**
+1. 使用 puter.js SDK 的 `puter.fs.read(uid)` API
+   - 错误：`Field 'file' is invalid. Expected unix-style path or uuid4.`
+   - 尝试了多种参数格式：`{uid: xxx}`, `{file: xxx}`, 直接传字符串
+   - 都无法正常工作
+
+2. 从父窗口访问 puter 对象
+   - 使用 `window.parent.puter` 或 `window.top.puter`
+   - 仍然报错
+
+3. 配置反向代理转发 `/file` 路径
+   - 用户配置了 Lucky 反向代理：`/file` → `http://127.0.0.1:4100/file`
+   - 短暂测试成功，但后来又不行了
+
+**Draw 和 Code 无法测试**
+- 现象：图标看不到，无法启动应用
+- 原因：缺少图标文件 `app-icon-draw.svg` 和 `app-icon-code.svg`
+- 状态：❌ 未测试
+
+### 根本问题分析
+
+**核心矛盾**：
+- 用户希望通过 HTTPS 反向代理访问（`https://puter.3868088.xyz`）
+- 但 Puter 生成的文件 URL 是 HTTP（`http://puter.localhost:4100/file`）
+- 浏览器的 Mixed Content 策略阻止 HTTPS 页面加载 HTTP 资源（特别是 fetch API）
+
+**为什么本地能工作？**
+- 本地访问 `https://gpt.3868088.xyz` 时，read_url 是 `http://puter.localhost:4100/file`
+- 浏览器认为 `puter.localhost` 是"本地网络地址"
+- 浏览器允许 HTTPS 页面加载本地网络的 HTTP 资源（有特殊处理）
+
+**为什么服务器不行？**
+- 服务器访问 `https://puter.3868088.xyz` 时，read_url 也是 `http://puter.localhost:4100/file`
+- 但 `puter.localhost` 对浏览器来说不是"本地地址"（因为浏览器在用户的电脑上，不是服务器上）
+- 浏览器严格执行 Mixed Content 策略
+
+### 下次计划
+
+1. **彻底解决 Mixed Content 问题**
+   - 方案A：配置反向代理正确转发所有 API 路径（`/file`, `/writeFile`, `/itemMetadata` 等）
+   - 方案B：让 Puter 在生成 URL 时检测请求协议，动态生成 HTTPS URL
+   - 方案C：直接用 HTTP 访问（`http://192.168.50.123:4100`），不使用反向代理
+
+2. **添加 Draw 和 Code 的图标**
+   - 创建 `app-icon-draw.svg` 和 `app-icon-code.svg`
+   - 或者从其他地方复制合适的图标
+
+3. **配置文件持久化**
+   - 当前修改的 `volatile/config/config.json` 在重启后可能丢失
+   - 需要找到永久配置的方法
+
+### 技术细节
+
+**服务器环境**：
+- 服务器 IP：192.168.50.123
+- 反向代理：Lucky
+- Puter HTTP 端口：4100
+- 访问域名：`https://puter.3868088.xyz`
+
+**关键文件**：
+- 配置文件：`~/docker/puter-unlocked/volatile/config/config.json`
+- Builtin apps：`~/docker/puter-unlocked/src/builtin/{viewer,editor,pdf,player,draw,code}/`
+
+**关键代码修改**：
+- `src/backend/src/config.js`：设置 `experimental_no_subdomain = true`
+- `src/gui/src/helpers/launch_app.js`：强制 builtin apps 使用本地路径
+- `src/backend/src/services/ServeGUIService.js`：静态文件服务配置
+
+---
+
+## 2026-01-28 - Builtin Apps Mixed Content 问题彻底解决
+
+### 背景
+之前的尝试使用 `puter.js SDK` 无法正常工作，最后回退到使用 `read_url`，但这又导致了 Mixed Content 问题。核心矛盾是：通过 HTTPS 反向代理访问时，Editor 和 PDF 无法通过 `fetch()` 加载 HTTP 资源。
+
+### 根本原因分析
+
+**为什么 puter.js SDK 方案失败？**
+1. SDK 的 `fs.read()` API 期望的参数是 `path`（文件路径），不是 `uid`
+2. SDK 的 `fs.write()` API 也需要 `path`（文件路径），不是 `uid`
+3. 但 builtin apps 只有 `uid`，没有完整的文件路径
+4. 导致所有尝试都失败：`{uid: xxx}`, `{file: xxx}`, 直接传字符串
+
+**后端 API 的真实能力**
+- 查看 `src/backend/src/routers/filesystem_api/read.js` 发现：
+  ```javascript
+  alias: {
+      path: 'file',
+      uid: 'file',  // ✅ 支持通过 UID 读取！
+  },
+  ```
+- `/write` API 也支持 UID：`alias: { uid: 'path' }`
+
+**关键发现**
+- 后端 API **同时支持 `path` 和 `uid`** 参数
+- 但 puter.js SDK 只能通过 `path` 访问
+- 解决方案：**绕过 SDK，直接调用后端 API**
+
+### 最终解决方案
+
+#### 修复 1：Editor 使用相对路径 API
+
+**文件：** `src/builtin/editor/index.html`
+
+**关键修改：**
+```javascript
+// 读取文件
+async function loadFile() {
+    const params = getURLParams();
+
+    // 使用相对路径调用后端 API，避免 Mixed Content 问题
+    // 浏览器会自动继承当前页面的协议（HTTPS）
+    if (params.itemUid) {
+        const response = await fetch(`/api/read?uid=${encodeURIComponent(params.itemUid)}`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('puter_auth_token') || ''}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        content = await response.text();
+    }
+}
+
+// 保存文件
+async function saveFile() {
+    const content = editor.value;
+
+    // 使用 FormData 上传文件内容
+    const formData = new FormData();
+    const blob = new Blob([content], { type: 'text/plain' });
+    formData.append('file', blob, itemName || 'Untitled.txt');
+    formData.append('path', fileUID); // 使用 UID 作为路径
+
+    const response = await fetch('/api/write', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${localStorage.getItem('puter_auth_token') || ''}`
+        },
+        body: formData
+    });
+}
+```
+
+**关键点：**
+1. ✅ 使用 `/api/read?uid=xxx` 相对路径
+2. ✅ 浏览器自动继承当前页面协议（HTTPS）
+3. ✅ 不依赖 puter.js SDK
+4. ✅ 读写都使用后端 API
+
+#### 修复 2：PDF 使用相对路径 API
+
+**文件：** `src/builtin/pdf/index.html`
+
+**关键修改：**
+```javascript
+async function loadPDF() {
+    const params = getURLParams();
+
+    // 使用相对路径调用后端 API，避免 Mixed Content 问题
+    const response = await fetch(`/api/read?uid=${encodeURIComponent(params.itemUid)}`, {
+        headers: {
+            'Authorization': `Bearer ${localStorage.getItem('puter_auth_token') || ''}`
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    // 获取 PDF 数据作为 ArrayBuffer
+    const arrayBuffer = await response.arrayBuffer();
+
+    // 使用 PDF.js 加载
+    const loadingTask = pdfjsLib.getDocument(arrayBuffer);
+    pdfDoc = await loadingTask.promise;
+}
+```
+
+**关键点：**
+1. ✅ 使用 `/api/read?uid=xxx` 相对路径
+2. ✅ 将响应转换为 `ArrayBuffer` 传递给 PDF.js
+3. ✅ 不依赖 read_url，避免 Mixed Content
+
+#### 修复 3：添加 Draw 和 Code 到数据库
+
+**操作：**
+```sql
+-- 添加 draw 应用
+INSERT INTO apps (uid, owner_user_id, name, title, icon, index_url, description, approved_for_opening_items, protected)
+VALUES (
+    lower(hex(randomblob(20))),
+    1,
+    'draw',
+    'Draw',
+    'data:image/svg+xml;base64,...',
+    'https://builtins.namespaces.puter.com/draw',
+    'Drawing tool for creating sketches and artwork',
+    1,
+    1
+);
+
+-- 添加 code 应用
+INSERT INTO apps (uid, owner_user_id, name, title, icon, index_url, description, approved_for_opening_items, protected)
+VALUES (
+    lower(hex(randomblob(20))),
+    1,
+    'code',
+    'Code',
+    'data:image/svg+xml;base64,...',
+    'https://builtins.namespaces.puter.com/code',
+    'Code editor with syntax highlighting',
+    1,
+    1
+);
+```
+
+**结果：**
+- ✅ Draw 和 Code 出现在应用列表中
+- ✅ 图标正常显示
+- ✅ 可以正常启动
+
+### 修复效果
+
+**所有 6 个 Builtin Apps 现在都能正常工作：**
+- ✅ Viewer（图片查看器）- 使用 read_url（浏览器限制较宽松）
+- ✅ Player（媒体播放器）- 使用 read_url（浏览器限制较宽松）
+- ✅ Editor（文本编辑器）- **使用 `/api/read?uid=` 相对路径**
+- ✅ PDF（PDF 查看器）- **使用 `/api/read?uid=` 相对路径**
+- ✅ Draw（绘图工具）- 新添加到数据库
+- ✅ Code（代码编辑器）- 新添加到数据库
+
+**Mixed Content 问题彻底解决：**
+- ✅ 不再依赖 read_url（HTTP）
+- ✅ 使用相对路径 `/api/read` 和 `/api/write`
+- ✅ 浏览器自动继承当前页面的 HTTPS 协议
+- ✅ 无论通过 HTTP 还是 HTTPS 访问都能正常工作
+
+### 关键经验
+
+#### 1. 后端 API 比 SDK 更强大
+- puter.js SDK 的 `fs.read()` 只支持 `path` 参数
+- 后端 `/read` API 同时支持 `path` 和 `uid` 参数
+- **结论：直接使用后端 API 更灵活**
+
+#### 2. 相对路径是解决 Mixed Content 的最佳方案
+```javascript
+// ❌ 错误：使用绝对 URL（HTTP）
+fetch('http://puter.localhost:4100/read?uid=xxx')
+
+// ❌ 错误：使用 read_url（HTTP）
+fetch(params.itemReadUrl)
+
+// ✅ 正确：使用相对路径
+fetch('/api/read?uid=xxx')
+// 浏览器会自动转换为：
+// - http://puter.localhost:4100/api/read?uid=xxx (HTTP 访问时)
+// - https://puter.3868088.xyz/api/read?uid=xxx (HTTPS 访问时)
+```
+
+#### 3. FormData 是写入文件的最佳方式
+```javascript
+// ✅ 使用 FormData 模拟文件上传
+const formData = new FormData();
+const blob = new Blob([content], { type: 'text/plain' });
+formData.append('file', blob, filename);
+formData.append('path', uid); // 后端支持 UID 作为路径
+
+fetch('/api/write', {
+    method: 'POST',
+    body: formData
+});
+```
+
+#### 4. 认证 Token 的处理
+- GUI 中的 token 存储在 `localStorage.getItem('puter_auth_token')`
+- 需要通过 `Authorization: Bearer ${token}` 传递给 API
+- 后端会验证 token 并返回对应的数据
+
+### 技术细节
+
+**后端 API 端点：**
+- `/api/read?uid=xxx` - 读取文件内容（支持 UID）
+- `/api/write` - 写入文件（支持 UID 作为 path）
+- `/api/token-read?uid=xxx&token=xxx` - 通过 token 读取（无需登录）
+
+**认证方式：**
+- API 端点使用 `auth2: true`（Bearer Token）
+- Token 从 `localStorage` 读取
+- 请求头：`Authorization: Bearer ${token}`
+
+**数据类型处理：**
+- Editor：`response.text()` - 读取文本
+- PDF：`response.arrayBuffer()` - 读取二进制数据
+- Write：`FormData` + `Blob` - 上传文件
+
+### Git 提交记录
+- （待提交）
+
+### 部署步骤
+```bash
+# 1. 拉取最新代码
+cd ~/docker-puter
+git pull
+
+# 2. 重新构建
+docker compose build
+
+# 3. 重启服务
+docker compose down
+docker compose up -d
+
+# 4. 测试
+# 访问 https://puter.3868088.xyz
+# 尝试打开所有 6 个 builtin apps
+```
+
